@@ -2,8 +2,9 @@ import os
 import json
 import logging
 import base64
+import traceback
 
-from datetime import datetime
+from dateutil import parser
 from google.cloud import storage
 
 TOKEN = os.getenv('TOKEN')
@@ -28,9 +29,9 @@ def consume(request):
         subscription = envelope['subscription'].split('/')[-1]
         id = envelope['message']['message_id']
         publish_time = envelope['message']['publish_time']
-        ts = datetime.strptime(publish_time, '%Y-%m-%dT%H:%M:%S.%fZ')
-
+        ts = parser.parse(publish_time)
     except Exception as e:
+        traceback.print_exc()
         logging.error(f"Extraction of event failed, reason: {e}")
         return 'OK', 204
 
