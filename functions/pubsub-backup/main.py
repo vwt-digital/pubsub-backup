@@ -2,7 +2,6 @@ import os
 import json
 import logging
 import base64
-import traceback
 
 from dateutil import parser
 from google.cloud import storage
