@@ -31,7 +31,6 @@ def consume(request):
         publish_time = envelope['message']['publish_time']
         ts = parser.parse(publish_time)
     except Exception as e:
-        traceback.print_exc()
         logging.error(f"Extraction of event failed, reason: {e}")
         return 'OK', 204
 
