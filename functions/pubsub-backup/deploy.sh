@@ -1,5 +1,5 @@
 gcloud functions deploy ${PROJECT_ID}-backup-func \
-  --entry-point=consume \
+  --entry-point=handler \
   --runtime=python37 \
   --trigger-http \
   --project=${PROJECT_ID} \
