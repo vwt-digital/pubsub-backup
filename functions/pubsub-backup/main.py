@@ -1,6 +1,5 @@
 import os
 import sys
-import math
 import json
 import time
 import logging
@@ -108,7 +107,7 @@ def pull_from_pubsub(subscription):
         if retry >= MAX_RETRIES:
             print(f"Max retries ({retry}) exceeded, exiting loop..")
             break
-        if len(mail) is 0:
+        if len(mail) == 0:
             retry += 1
             continue
         if len(messages) > TOTAL_MESSAGES:
