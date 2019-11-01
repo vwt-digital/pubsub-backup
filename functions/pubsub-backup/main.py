@@ -3,7 +3,6 @@ import sys
 import json
 import time
 import logging
-import base64
 import uuid
 import traceback
 import gzip
@@ -33,8 +32,8 @@ def handler(request):
         """
 
     try:
-        envelope = json.loads(request.data.decode('utf-8'))
-        subscription = base64.b64decode(envelope['message']['data']).decode('utf-8')
+        # Read data from request, origin is a post request
+        subscription = request.data.decode('utf-8')
         logging.info(f"Starting backup of messages from {subscription}...")
     except Exception as e:
         traceback.print_exc()

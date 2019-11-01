@@ -1,15 +1,15 @@
-# Pubsub backup
+# Pubsub backup function
 
-This repository contains functions to backup and compress pubsub messages in a storage bucket. In an event-driven architecture, it may be useful to store the event history that passes a topic to a storage bucket. This facilitates the replaying of the entire event history to, for example, another topic.
+This repository contains a function to backup and compress (gzip) pubsub messages in a storage bucket. In an event-driven architecture, it may be useful to store the event history that passes a topic to a storage bucket. This facilitates the replaying of the entire event history.
 
 ![pubsub backup](pubsub-backup.svg)
 
-To put a test message on the topic to trigger a backup, use the following command:
+There are several helper scripts included:
 
-```
-gcloud pubsub topics publish "TOPIC_NAME" --message "SUBSCRIPTION_NAME" --project "PROJECT_ID"
-```
+- deploy.sh: deploy the backup function to Google.
+- schedule.sh: create a backup scheduler which will post a request to the backup function.
+- post.sh: test the backup function with a http POST request with Bearer token.
 
-Note: topics, push subscriptions, scheduler and buckets not included!
+Note: backup bucket not included!
 
 Literature: [Pub/sub push subscriptions](https://cloud.google.com/pubsub/docs/push)

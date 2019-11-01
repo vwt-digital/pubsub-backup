@@ -3,7 +3,7 @@ gcloud functions deploy ${PROJECT_ID}-backup-func \
   --runtime=python37 \
   --trigger-http \
   --project=${PROJECT_ID} \
-  --region=europe-west1 \
+  --region=${REGION} \
   --memory=2048MB \
   --timeout=540s \
   --env-vars-file=env.yaml
