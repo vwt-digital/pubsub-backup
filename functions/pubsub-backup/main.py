@@ -16,6 +16,7 @@ PROJECT_ID = os.getenv('PROJECT_ID')
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
+FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '520'))
 
 
 def handler(request):
@@ -121,6 +122,9 @@ def pull_from_pubsub(subscription):
 
         logging.info(f"Appending {len(messages)} messages...")
         send_messages.extend(messages)
+
+        if (time.time() - start) > FUNCTION_TIMEOUT:
+            break
 
     stop = time.time() - start
     logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} messages from {subscription}!")
