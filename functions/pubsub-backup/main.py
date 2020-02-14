@@ -55,7 +55,6 @@ def pull_from_pubsub(subscription):
     subscription_path = client.subscription_path(PROJECT_ID, subscription)
 
     retry = 0
-    backoff = 1
     send_messages = []
 
     logging.info(f"Starting to gather messages from {subscription}...")
@@ -65,7 +64,7 @@ def pull_from_pubsub(subscription):
         resp = client.pull(
             subscription_path,
             max_messages=MAX_MESSAGES,
-            timeout=0.125 * backoff)
+            timeout=30)
 
         ack_ids = []
         messages = []
@@ -77,11 +76,6 @@ def pull_from_pubsub(subscription):
             ack_ids.append(msg.ack_id)
 
         # Retry up until max_retries or total_messages
-        # Back off when max_messages is not reached
-        if len(mail) is not MAX_MESSAGES:
-            backoff += 1
-        elif backoff > 1:
-            backoff -= 1
         if len(mail) == 0:
             retry += 1
             if retry >= MAX_RETRIES:
