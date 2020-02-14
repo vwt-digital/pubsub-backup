@@ -102,7 +102,6 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
     bucket = client.get_bucket(bucket_name)
     blob_name = f"{prefix}/{epoch}-{id}.archive.gz"
     blob = bucket.blob(blob_name)
-    blob.content_type = 'application/gzip'
     blob.upload_from_string(blob_bytes)
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
