@@ -26,7 +26,7 @@ def handler(request):
     except Exception as e:
         traceback.print_exc()
         logging.error(f"Something bad happened, reason: {e}")
-        return 'OK', 204
+        return '500', 500
 
     if not messages:
         logging.info(f"No messages to historize, exiting...")
@@ -45,7 +45,7 @@ def handler(request):
     except Exception as e:
         traceback.print_exc()
         logging.error(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
-        return 'OK', 204
+        return 'ERROR', 500
 
     return 'OK', 204
 
@@ -72,7 +72,10 @@ def pull_from_pubsub(subscription):
         mail = resp.received_messages
 
         for msg in mail:
-            message = json.loads(msg.message.data.decode('utf-8'))
+            try:
+                message = json.loads(msg.message.data.decode('utf-8'))
+            except Exception:
+                logging.error(f"Json could not be parsed, skipping: {msg.message.data.decode('utf-8')}")
             messages.append(message)
             ack_ids.append(msg.ack_id)
 
