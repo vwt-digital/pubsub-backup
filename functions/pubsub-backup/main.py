@@ -55,7 +55,6 @@ def pull_from_pubsub(subscription):
     subscription_path = client.subscription_path(PROJECT_ID, subscription)
 
     retry = 0
-    backoff = 0
     send_messages = []
 
     logging.info(f"Starting to gather messages from {subscription}...")
@@ -65,7 +64,7 @@ def pull_from_pubsub(subscription):
         resp = client.pull(
             subscription_path,
             max_messages=MAX_MESSAGES,
-            return_immediately=True)
+            timeout=30)
 
         ack_ids = []
         messages = []
@@ -80,25 +79,19 @@ def pull_from_pubsub(subscription):
             ack_ids.append(msg.ack_id)
 
         # Retry up until max_retries or total_messages
-        # Back off when max_messages is not reached
-        if len(mail) is not MAX_MESSAGES:
-            time.sleep(0.125 * backoff)
-            backoff += 1
-        else:
-            backoff -= 1
-        if retry >= MAX_RETRIES:
-            print(f"Max retries ({retry}) exceeded, exiting loop..")
-            break
         if len(mail) == 0:
             retry += 1
+            if retry >= MAX_RETRIES:
+                print(f"Max retries ({retry}) exceeded, exiting loop..")
+                break
             continue
-        if len(messages) > TOTAL_MESSAGES:
-            break
 
         client.acknowledge(subscription_path, ack_ids)
         logging.info(f"Appending {len(messages)} messages...")
         send_messages.extend(messages)
 
+        if len(send_messages) > TOTAL_MESSAGES:
+            break
         if (time.time() - start) > FUNCTION_TIMEOUT:
             break
 
@@ -112,8 +105,6 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
     bucket = client.get_bucket(bucket_name)
     blob_name = f"{prefix}/{epoch}-{id}.archive.gz"
     blob = bucket.blob(blob_name)
-    blob.cache_control = 'no-cache'
-    blob.content_encoding = 'gzip'
     blob.upload_from_string(blob_bytes)
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
