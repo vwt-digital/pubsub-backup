@@ -11,45 +11,25 @@ from datetime import datetime
 from google.cloud import storage
 from google.cloud import pubsub_v1
 
-TOKEN = os.getenv('TOKEN')
 PROJECT_ID = os.getenv('PROJECT_ID')
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
-FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '520'))
+FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 
 
 def handler(request):
-    # Verify to Google that the function is within your domain
-    if request.method == 'GET':
-        return f"""
-            <html>
-                <head>
-                    <meta name="google-site-verification" content="{TOKEN}" />
-                </head>
-                <body>
-                </body>
-            </html>
-        """
-
     try:
-        # Read data from request, origin is a post request
         subscription = request.data.decode('utf-8')
-        logging.info(f"Starting backup of messages from {subscription}...")
-    except Exception as e:
-        traceback.print_exc()
-        logging.error(f"Extraction of msg failed, reason: {e}")
-        return 'OK', 204
-
-    try:
+        logging.info(f"Starting to historize messages from {subscription}...")
         messages = pull_from_pubsub(subscription)
     except Exception as e:
         traceback.print_exc()
-        logging.error(f"Pulling of messages from {subscription} failed, reason: {e}")
-        return 'OK', 204
+        logging.error(f"Something bad happened, reason: {e}")
+        return '500', 500
 
     if not messages:
-        logging.info(f"No messages to backup, exiting...")
+        logging.info(f"No messages to historize, exiting...")
         return 'OK', 204
 
     id = str(uuid.uuid4())[:16]
@@ -65,7 +45,7 @@ def handler(request):
     except Exception as e:
         traceback.print_exc()
         logging.error(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
-        return 'OK', 204
+        return 'ERROR', 500
 
     return 'OK', 204
 
@@ -75,54 +55,43 @@ def pull_from_pubsub(subscription):
     subscription_path = client.subscription_path(PROJECT_ID, subscription)
 
     retry = 0
-    backoff = 0
     send_messages = []
 
     logging.info(f"Starting to gather messages from {subscription}...")
     start = time.time()
 
     while True:
-        try:
-            resp = client.pull(subscription_path, max_messages=MAX_MESSAGES, return_immediately=True)
-        except Exception as e:
-            logging.error(f"Something went wrong: {e}")
-            break
+        resp = client.pull(
+            subscription_path,
+            max_messages=MAX_MESSAGES,
+            timeout=30)
 
         ack_ids = []
         messages = []
         mail = resp.received_messages
 
         for msg in mail:
-            message = msg.message.data.decode('utf-8')
+            try:
+                message = json.loads(msg.message.data.decode('utf-8'))
+            except Exception:
+                logging.error(f"Json could not be parsed, skipping: {msg.message.data.decode('utf-8')}")
             messages.append(message)
             ack_ids.append(msg.ack_id)
 
         # Retry up until max_retries or total_messages
-        # Back off when max_messages is not reached
-        if len(mail) is not MAX_MESSAGES:
-            time.sleep(0.125 * backoff)
-            backoff += 1
-        else:
-            backoff -= 1
-        if retry >= MAX_RETRIES:
-            print(f"Max retries ({retry}) exceeded, exiting loop..")
-            break
         if len(mail) == 0:
             retry += 1
-            continue
-        if len(messages) > TOTAL_MESSAGES:
-            break
-
-        try:
-            client.acknowledge(subscription_path, ack_ids)
-        except Exception as e:
-            logging.error(f"Something went wrong: {e}")
-            logging.info('Continuing...')
+            if retry >= MAX_RETRIES:
+                print(f"Max retries ({retry}) exceeded, exiting loop..")
+                break
             continue
 
+        client.acknowledge(subscription_path, ack_ids)
         logging.info(f"Appending {len(messages)} messages...")
         send_messages.extend(messages)
 
+        if len(send_messages) > TOTAL_MESSAGES:
+            break
         if (time.time() - start) > FUNCTION_TIMEOUT:
             break
 
@@ -136,8 +105,6 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
     bucket = client.get_bucket(bucket_name)
     blob_name = f"{prefix}/{epoch}-{id}.archive.gz"
     blob = bucket.blob(blob_name)
-    blob.cache_control = 'no-cache'
-    blob.content_encoding = 'gzip'
     blob.upload_from_string(blob_bytes)
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
