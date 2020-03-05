@@ -4,7 +4,6 @@ import json
 import time
 import logging
 import uuid
-import traceback
 import gzip
 
 from datetime import datetime
@@ -24,9 +23,8 @@ def handler(request):
         logging.info(f"Starting to historize messages from {subscription}...")
         messages = pull_from_pubsub(subscription)
     except Exception as e:
-        traceback.print_exc()
-        logging.error(f"Something bad happened, reason: {e}")
-        return '500', 500
+        logging.exception(f"Something bad happened, reason: {e}")
+        return 'ERROR', 500
 
     if not messages:
         logging.info(f"No messages to historize, exiting...")
@@ -43,8 +41,7 @@ def handler(request):
         compressed = compress(messages_string)
         to_storage(compressed, bucket_name, prefix, epoch, id)
     except Exception as e:
-        traceback.print_exc()
-        logging.error(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
+        logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 500
 
     return 'OK', 204
@@ -74,7 +71,7 @@ def pull_from_pubsub(subscription):
             try:
                 message = json.loads(msg.message.data.decode('utf-8'))
             except Exception:
-                logging.error(f"Json could not be parsed, skipping: {msg.message.data.decode('utf-8')}")
+                logging.exception(f"Json could not be parsed, skipping msg from subscription: {subscription}")
             messages.append(message)
             ack_ids.append(msg.ack_id)
 
