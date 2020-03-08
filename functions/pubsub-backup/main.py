@@ -15,25 +15,29 @@ MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
+MAX_SMALL_BATCHES = int(os.getenv('MAX_SMALL_BATCHES', '10'))
+
+client = pubsub_v1.SubscriberClient()
 
 
 def handler(request):
     try:
         subscription = request.data.decode('utf-8')
-        logging.info(f"Starting to historize messages from {subscription}...")
-        messages = pull_from_pubsub(subscription)
+        subscription_path = client.subscription_path(PROJECT_ID, subscription)
+        logging.info(f"Starting to archive messages from {subscription_path}...")
+        messages, ack_ids = pull_from_pubsub(subscription_path)
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
-        return 'ERROR', 500
+        return 'ERROR', 501
 
     if not messages:
-        logging.info(f"No messages to historize, exiting...")
+        logging.info(f"No messages to archive, exiting...")
         return 'OK', 204
 
     id = str(uuid.uuid4())[:16]
     now = datetime.now()
     epoch = int(now.strftime("%s"))
-    prefix = now.strftime('%Y/%m/%d')
+    prefix = now.strftime('%Y/%m/%d/%H')
     bucket_name = subscription_to_bucket(subscription)
 
     try:
@@ -42,19 +46,30 @@ def handler(request):
         to_storage(compressed, bucket_name, prefix, epoch, id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
-        return 'ERROR', 500
+        return 'ERROR', 501
+
+    try:
+        logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
+        chunks = chunk(ack_ids, 1000)
+        for batch in chunks:
+            client.acknowledge(subscription_path, batch)
+            logging.info(f"Acknowledged {len(batch)} message(s)...")
+        logging.info(f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}")
+    except Exception as e:
+        logging.exception(f"Acknowleding failed, reason: {e}")
+        return 'ERROR', 501
 
     return 'OK', 204
 
 
-def pull_from_pubsub(subscription):
-    client = pubsub_v1.SubscriberClient()
-    subscription_path = client.subscription_path(PROJECT_ID, subscription)
+def pull_from_pubsub(subscription_path):
 
     retry = 0
+    small = 0
+    ack_ids = []
     send_messages = []
 
-    logging.info(f"Starting to gather messages from {subscription}...")
+    logging.info(f"Starting to gather messages from {subscription_path}...")
     start = time.time()
 
     while True:
@@ -63,7 +78,6 @@ def pull_from_pubsub(subscription):
             max_messages=MAX_MESSAGES,
             timeout=30)
 
-        ack_ids = []
         messages = []
         mail = resp.received_messages
 
@@ -71,30 +85,41 @@ def pull_from_pubsub(subscription):
             try:
                 message = json.loads(msg.message.data.decode('utf-8'))
             except Exception:
-                logging.exception(f"Json could not be parsed, skipping msg from subscription: {subscription}")
+                logging.warning(f"Json could not be parsed, skipping msg from subscription: {subscription_path}")
             messages.append(message)
             ack_ids.append(msg.ack_id)
 
-        # Retry up until max_retries or total_messages
+        # Retry until max_retries
         if len(mail) == 0:
             retry += 1
             if retry >= MAX_RETRIES:
-                print(f"Max retries ({retry}) exceeded, exiting loop..")
+                logging.info(f"Max retries ({retry}) exceeded, exiting loop..")
                 break
+            logging.info(f"Found no messages, retry {retry}/{MAX_RETRIES}..")
             continue
 
-        client.acknowledge(subscription_path, ack_ids)
-        logging.info(f"Appending {len(messages)} messages...")
+        logging.info(f"Appending {len(messages)} message(s)...")
         send_messages.extend(messages)
 
+        # Finish when total messages is reached or time expired
         if len(send_messages) > TOTAL_MESSAGES:
             break
         if (time.time() - start) > FUNCTION_TIMEOUT:
             break
 
+        # Finish when batches become too small
+        if len(mail) < 10:
+            small += 1
+            if small >= MAX_SMALL_BATCHES:
+                logging.info(f"Batches too small, exiting loop..")
+                break
+            continue
+        else:
+            small = 0
+
     stop = time.time() - start
-    logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} messages from {subscription}!")
-    return send_messages
+    logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} message(s) from {subscription_path}!")
+    return send_messages, ack_ids
 
 
 def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
@@ -116,3 +141,8 @@ def compress(str):
 def subscription_to_bucket(subscription):
     bucket_name = subscription.replace('sub', 'stg')
     return bucket_name
+
+
+def chunk(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
