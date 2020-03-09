@@ -76,7 +76,7 @@ def pull_from_pubsub(subscription_path):
         resp = client.pull(
             subscription_path,
             max_messages=MAX_MESSAGES,
-            timeout=30)
+            timeout=5)
 
         messages = []
         mail = resp.received_messages
@@ -108,7 +108,7 @@ def pull_from_pubsub(subscription_path):
             break
 
         # Finish when batches become too small
-        if len(mail) < 10:
+        if len(mail) < 20:
             small += 1
             if small >= MAX_SMALL_BATCHES:
                 logging.info(f"Batches too small, exiting loop..")
