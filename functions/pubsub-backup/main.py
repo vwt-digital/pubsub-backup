@@ -118,8 +118,8 @@ def pull_from_pubsub(subscription_path):
         else:
             small = 0
 
-        # Finish when total messages reaches maximum size
-        if sys.getsizeof(str) >= MAX_BYTES:
+        # Finish when total messages reaches maximum size in bytes
+        if sys.getsizeof(send_messages) >= MAX_BYTES:
             logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
 
     stop = time.time() - start
