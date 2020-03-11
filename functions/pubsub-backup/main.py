@@ -65,6 +65,7 @@ def handler(request):
 
 def pull_from_pubsub(subscription_path):
 
+    size = 0
     retry = 0
     small = 0
     ack_ids = []
@@ -109,7 +110,7 @@ def pull_from_pubsub(subscription_path):
             break
 
         # Finish when batches become too small
-        if len(mail) < 20:
+        if len(mail) < 50:
             small += 1
             if small >= MAX_SMALL_BATCHES:
                 logging.info(f"Batches too small, exiting loop..")
@@ -119,8 +120,10 @@ def pull_from_pubsub(subscription_path):
             small = 0
 
         # Finish when total messages reaches maximum size in bytes
-        if sys.getsizeof(send_messages) >= MAX_BYTES:
+        size = size + sys.getsizeof(json.dumps(messages))
+        if size >= MAX_BYTES:
             logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
+            break
 
     stop = time.time() - start
     logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} message(s) from {subscription_path}!")
