@@ -12,6 +12,7 @@ from google.cloud import pubsub_v1
 
 PROJECT_ID = os.getenv('PROJECT_ID')
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
+MAX_BYTES = int(os.getenv('MAX_BYTES', '128000000'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
@@ -64,6 +65,7 @@ def handler(request):
 
 def pull_from_pubsub(subscription_path):
 
+    size = 0
     retry = 0
     small = 0
     ack_ids = []
@@ -108,7 +110,7 @@ def pull_from_pubsub(subscription_path):
             break
 
         # Finish when batches become too small
-        if len(mail) < 10:
+        if len(mail) < 50:
             small += 1
             if small >= MAX_SMALL_BATCHES:
                 logging.info(f"Batches too small, exiting loop..")
@@ -116,6 +118,12 @@ def pull_from_pubsub(subscription_path):
             continue
         else:
             small = 0
+
+        # Finish when total messages reaches maximum size in bytes
+        size = size + sys.getsizeof(json.dumps(messages))
+        if size >= MAX_BYTES:
+            logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
+            break
 
     stop = time.time() - start
     logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} message(s) from {subscription_path}!")
