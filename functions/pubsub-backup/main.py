@@ -77,8 +77,7 @@ def pull_from_pubsub(subscription_path):
     while True:
         resp = client.pull(
             subscription_path,
-            max_messages=MAX_MESSAGES,
-            timeout=30)
+            max_messages=MAX_MESSAGES)
 
         messages = []
         mail = resp.received_messages
