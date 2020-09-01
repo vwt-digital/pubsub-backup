@@ -32,7 +32,7 @@ def handler(request):
         return 'ERROR', 501
 
     if not messages:
-        logging.info(f"No messages to archive, exiting...")
+        logging.info("No messages to archive, exiting...")
         return 'OK', 204
 
     id = str(uuid.uuid4())[:16]
@@ -75,20 +75,26 @@ def pull_from_pubsub(subscription_path):
     start = time.time()
 
     while True:
-        resp = client.pull(
-            subscription_path,
-            max_messages=MAX_MESSAGES)
+        mail = []
 
-        messages = []
-        mail = resp.received_messages
+        try:
+            resp = client.pull(
+                subscription_path,
+                max_messages=MAX_MESSAGES)
+        except Exception as e:
+            print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
+            pass
+        else:
+            messages = []
+            mail = resp.received_messages
 
-        for msg in mail:
-            try:
-                message = json.loads(msg.message.data.decode('utf-8'))
-            except Exception:
-                logging.warning(f"Json could not be parsed, skipping msg from subscription: {subscription_path}")
-            messages.append(message)
-            ack_ids.append(msg.ack_id)
+            for msg in mail:
+                try:
+                    message = json.loads(msg.message.data.decode('utf-8'))
+                except Exception:
+                    logging.warning(f"Json could not be parsed, skipping msg from subscription: {subscription_path}")
+                messages.append(message)
+                ack_ids.append(msg.ack_id)
 
         # Retry until max_retries
         if len(mail) == 0:
@@ -112,7 +118,7 @@ def pull_from_pubsub(subscription_path):
         if len(mail) < 50:
             small += 1
             if small >= MAX_SMALL_BATCHES:
-                logging.info(f"Batches too small, exiting loop..")
+                logging.info("Batches too small, exiting loop..")
                 break
             continue
         else:
