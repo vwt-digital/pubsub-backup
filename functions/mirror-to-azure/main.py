@@ -1,54 +1,69 @@
+import os
+import json
+import utils
 import logging
+
 from google.cloud import pubsub_v1
 from azure.eventhub import EventHubProducerClient, EventData
-import config
-
 
 logging.basicConfig(level=logging.INFO)
 
-event_data_batch = None
 producer = None
+event_data_batch = None
 
 
-def callback_handle_message(msg):
+def callback(msg):
+    """
+    Callback function for pub/sub subscriber.
+    """
+
     global event_data_batch
     global producer
-    msg_json = msg.data.decode()
 
-    try:
-        logging.info(f"Adding eventdata {msg_json}")
-        event_data_batch.add(EventData(msg_json))
-    except ValueError:
-        logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-        producer.send_batch(event_data_batch)
-        event_data_batch = producer.create_batch()
+    msg_json = msg.data.decode()
+    event_data_batch.add(EventData(msg_json))
+    logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
+    producer.send_batch(event_data_batch)
+    event_data_batch = producer.create_batch()
 
     msg.ack()
 
 
-def retrieve_and_mirror_msgs(request):
+def handler(request):
+    """
+    Handler function that subscribes to gcp pub/sub
+    and sends messages to azure event hub.
+    """
+
     global event_data_batch
     global producer
-    logging.info(f"Opening Event Hub producer for {config.EVENTHUB_NAME}...")
-    producer = EventHubProducerClient.from_connection_string(
-           conn_str=config.EVENT_HUB_CONNECT_STRING,
-           eventhub_name=config.EVENTHUB_NAME
-       )
 
-    logging.info(f"Creating producer batch")
+    config = json.loads(request.data.decode('utf-8'))
+    event_hub_connection_string = utils.get_secret(
+        os.environ['PROJECT_ID'],
+        os.environ['SECRET_ID']
+    )
+
+    logging.info(f"Creating Azure producer...")
+    producer = EventHubProducerClient.from_connection_string(
+           conn_str=event_hub_connection_string,
+           eventhub_name=config['event_hub_name'])
     event_data_batch = producer.create_batch()
 
-    logging.info(f"Opening subscriber on {config.PUBSUB_SUBSCRIPTION_NAME}")
+    logging.info(f"Creating GCP subscriber...")
     subscriber = pubsub_v1.SubscriberClient()
-    subscription_path = subscriber.subscription_path(config.PUBSUB_PROJECT_ID, config.PUBSUB_SUBSCRIPTION_NAME)
-    streaming_pull_future = subscriber.subscribe(subscription_path, callback=callback_handle_message)
+    subscription_path = subscriber.subscription_path(
+        config['project_id'],
+        config['subscription_name'])
+    streaming_pull_future = subscriber.subscribe(
+        subscription_path,
+        callback=callback)
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
-    # Wrap subscriber in a 'with' block to automatically call close() when done.
     with subscriber:
         try:
-            streaming_pull_future.result(timeout=5)
+            streaming_pull_future.result(timeout=30)
         except Exception as e:
             streaming_pull_future.cancel()
             print(f"Listening for messages on {subscription_path} threw an exception: {e}.")
@@ -62,4 +77,4 @@ def retrieve_and_mirror_msgs(request):
 
 
 if __name__ == '__main__':
-    retrieve_and_mirror_msgs(None)
+    handler(None)
