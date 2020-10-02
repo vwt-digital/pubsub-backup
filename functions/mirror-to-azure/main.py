@@ -18,8 +18,9 @@ def handler(request):
     and sends messages to azure event hub.
     """
 
-    global event_data_batch
     global producer
+    global event_data_batch
+    global subscription_path
 
     subscription_path = request.data.decode('utf-8')
 
