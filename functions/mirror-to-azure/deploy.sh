@@ -9,7 +9,7 @@ gcloud functions deploy "${PROJECT_ID}-azure-mirror-func" \
   --region=europe-west1 \
   --memory=1024MB \
   --timeout=540s \
-  --set-env-vars=PROJECT_ID="${PROJECT_ID}",SECRET_ID="${PROJECT_ID}-azure-endpoint"
+  --set-env-vars=PROJECT_ID="${PROJECT_ID}",CONNECTION_SECRET="${PROJECT_ID}-azure-conn-str",EVENTHUB_SECRET="${PROJECT_ID}-eventhub-name"
 
 gcloud functions add-iam-policy-binding "${PROJECT_ID}-azure-mirror-func" \
   --region=europe-west1 \

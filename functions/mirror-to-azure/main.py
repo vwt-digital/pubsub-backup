@@ -1,5 +1,4 @@
 import os
-import json
 import utils
 import logging
 
@@ -38,23 +37,26 @@ def handler(request):
     global event_data_batch
     global producer
 
-    config = json.loads(request.data.decode('utf-8'))
+    subscription_path = request.data.decode('utf-8')
+
     event_hub_connection_string = utils.get_secret(
         os.environ['PROJECT_ID'],
-        os.environ['SECRET_ID']
+        os.environ['CONNECTION_SECRET']
     )
 
-    logging.info(f"Creating Azure producer...")
+    event_hub_name = utils.get_secret(
+        os.environ['PROJECT_ID'],
+        os.environ['EVENTHUB_SECRET']
+    )
+
+    logging.info("Creating Azure producer...")
     producer = EventHubProducerClient.from_connection_string(
            conn_str=event_hub_connection_string,
-           eventhub_name=config['event_hub_name'])
+           eventhub_name=event_hub_name)
     event_data_batch = producer.create_batch()
 
-    logging.info(f"Creating GCP subscriber...")
+    logging.info("Creating GCP subscriber...")
     subscriber = pubsub_v1.SubscriberClient()
-    subscription_path = subscriber.subscription_path(
-        config['project_id'],
-        config['subscription_name'])
     streaming_pull_future = subscriber.subscribe(
         subscription_path,
         callback=callback)
