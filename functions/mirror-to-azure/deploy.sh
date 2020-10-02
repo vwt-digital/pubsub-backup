@@ -1,6 +1,17 @@
 #!/bin/bash
 # shellcheck disable=SC2140
 
+PROJECT_ID=${1}
+
+function error_exit() {
+  # ${BASH_SOURCE[1]} is the file name of the caller.
+  echo "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${1:-Unknown Error.} (exit ${2:-1})" 1>&2
+  exit "${2:-1}"
+}
+
+[[ -n "${PROJECT_ID}" ]] || error_exit "Missing required PROJECT_ID"
+
+
 gcloud functions deploy "${PROJECT_ID}-azure-mirror-func" \
   --entry-point=handler \
   --runtime=python37 \
