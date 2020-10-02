@@ -1,4 +1,5 @@
 import os
+import json
 import utils
 import logging
 
@@ -77,7 +78,7 @@ def callback(msg):
         "subscription": subscription_path.split("/")[-1]
     }
 
-    event_data_batch.add(EventData(event))
+    event_data_batch.add(EventData(json.dumps(event)))
     logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
     producer.send_batch(event_data_batch)
     event_data_batch = producer.create_batch()
