@@ -9,23 +9,7 @@ logging.basicConfig(level=logging.INFO)
 
 producer = None
 event_data_batch = None
-
-
-def callback(msg):
-    """
-    Callback function for pub/sub subscriber.
-    """
-
-    global event_data_batch
-    global producer
-
-    msg_json = msg.data.decode()
-    event_data_batch.add(EventData(msg_json))
-    logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-    producer.send_batch(event_data_batch)
-    event_data_batch = producer.create_batch()
-
-    msg.ack()
+subscription_path = None
 
 
 def handler(request):
@@ -76,6 +60,28 @@ def handler(request):
 
     subscriber.close()
     producer.close()
+
+
+def callback(msg):
+    """
+    Callback function for pub/sub subscriber.
+    """
+
+    global producer
+    global event_data_batch
+    global subscription_path
+
+    event = {
+        "message": msg.data.decode(),
+        "subscription": subscription_path.split("/")[-1]
+    }
+
+    event_data_batch.add(EventData(event))
+    logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
+    producer.send_batch(event_data_batch)
+    event_data_batch = producer.create_batch()
+
+    msg.ack()
 
 
 if __name__ == '__main__':
