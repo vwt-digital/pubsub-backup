@@ -1,5 +1,12 @@
 #!/bin/bash
 
+schedulers=$(gcloud scheduler jobs list --project="${PROJECT_ID}" --format="value(name)" --filter="name:*azure-mirror-sub-job")
+
+for scheduler in $schedulers
+do
+  gcloud scheduler jobs delete "$scheduler" --project="${PROJECT_ID}" --quiet
+done
+
 subscriptions=$(gcloud pubsub subscriptions list --format="value(name)" --project="${PROJECT_ID}" --filter="name:*azure-mirror-sub")
 
 for subscription in $subscriptions
