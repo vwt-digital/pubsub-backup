@@ -21,9 +21,10 @@ subscriptions=$(gcloud pubsub subscriptions list --format="value(name)" --projec
 
 for subscription in $subscriptions
 do
+  minute=$(shuf -i 1-5 -n 1)
   job=$(echo "${subscription}-job" | rev | cut -d '/' -f 1 | rev)
   gcloud scheduler jobs create http "${job}" \
-    --schedule="*/5 * * * *" \
+    --schedule="*/${minute} * * * *" \
     --uri="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func/" \
     --http-method=POST \
     --oidc-service-account-email="${PROJECT_ID}@appspot.gserviceaccount.com" \
