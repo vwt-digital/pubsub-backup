@@ -21,7 +21,7 @@ subscriptions=$(gcloud pubsub subscriptions list --format="value(name)" --projec
 
 for subscription in $subscriptions
 do
-  minute=$(shuf -i 1-5 -n 1)
+  minute=$(shuf -i 1-15 -n 1)
   job=$(echo "${subscription}-job" | rev | cut -d '/' -f 1 | rev)
   gcloud scheduler jobs create http "${job}" \
     --schedule="*/${minute} * * * *" \
