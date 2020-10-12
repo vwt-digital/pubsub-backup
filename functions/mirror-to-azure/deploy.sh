@@ -18,7 +18,7 @@ gcloud functions deploy "${PROJECT_ID}-azure-mirror-func" \
   --trigger-http \
   --project="${PROJECT_ID}" \
   --region=europe-west1 \
-  --memory=1024MB \
+  --memory=512MB \
   --timeout=540s \
   --set-env-vars=PROJECT_ID="${PROJECT_ID}",CONNECTION_SECRET="${PROJECT_ID}-azure-conn-str",EVENTHUB_SECRET="${PROJECT_ID}-eventhub-name"
 
