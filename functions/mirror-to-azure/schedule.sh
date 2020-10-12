@@ -23,7 +23,7 @@ for subscription in $subscriptions
 do
   job=$(echo "${subscription}-job" | rev | cut -d '/' -f 1 | rev)
   gcloud scheduler jobs create http "${job}" \
-    --schedule="*/15 * * * *" \
+    --schedule="every 15 minutes" \
     --uri="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func/" \
     --http-method=POST \
     --oidc-service-account-email="${PROJECT_ID}@appspot.gserviceaccount.com" \
