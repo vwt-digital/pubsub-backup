@@ -20,7 +20,6 @@ def handler(request):
     """
 
     global producer
-    global event_data_batch
     global subscription_path
 
     subscription_path = request.data.decode('utf-8')
@@ -55,11 +54,6 @@ def handler(request):
             streaming_pull_future.cancel()
             print(f"Listening for messages on {subscription_path} threw an exception: {e}.")
 
-    if event_data_batch.size_in_bytes > 0:
-        logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-        producer.send_batch(event_data_batch)
-
-    subscriber.close()
     producer.close()
 
 
@@ -82,7 +76,7 @@ def callback(msg):
 
     batch = producer.create_batch()
     batch.add(EventData(compressed))
-    logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-    producer.send_batch(event_data_batch)
+    logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
+    producer.send_batch(batch)
 
     msg.ack()
