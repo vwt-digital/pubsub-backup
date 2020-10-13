@@ -1,6 +1,7 @@
 import os
 import json
 import utils
+import gzip
 import logging
 
 from google.cloud import pubsub_v1
@@ -9,7 +10,6 @@ from azure.eventhub import EventHubProducerClient, EventData
 logging.basicConfig(level=logging.INFO)
 
 producer = None
-event_data_batch = None
 subscription_path = None
 
 
@@ -39,7 +39,6 @@ def handler(request):
     producer = EventHubProducerClient.from_connection_string(
            conn_str=event_hub_connection_string,
            eventhub_name=event_hub_name)
-    event_data_batch = producer.create_batch()
 
     logging.info("Creating GCP subscriber...")
     subscriber = pubsub_v1.SubscriberClient()
@@ -70,7 +69,6 @@ def callback(msg):
     """
 
     global producer
-    global event_data_batch
     global subscription_path
 
     event = {
@@ -78,13 +76,13 @@ def callback(msg):
         "subscription": subscription_path.split("/")[-1]
     }
 
-    event_data_batch.add(EventData(json.dumps(event)))
+    json_data = json.dumps(event)
+    encoded = json_data.encode('utf-8')
+    compressed = gzip.compress(encoded)
+
+    batch = producer.create_batch()
+    batch.add(EventData(compressed))
     logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
     producer.send_batch(event_data_batch)
-    event_data_batch = producer.create_batch()
 
     msg.ack()
-
-
-if __name__ == '__main__':
-    handler(None)
