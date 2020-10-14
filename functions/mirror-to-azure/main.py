@@ -1,7 +1,6 @@
 import os
 import json
 import utils
-import gzip
 import logging
 
 from google.cloud import pubsub_v1
@@ -70,12 +69,9 @@ def callback(msg):
         "subscription": subscription_path.split("/")[-1]
     }
 
-    json_data = json.dumps(event)
-    encoded = json_data.encode('utf-8')
-    compressed = gzip.compress(encoded)
-
+    data = json.dumps(event)
     batch = producer.create_batch()
-    batch.add(EventData(compressed))
+    batch.add(EventData(data))
     logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
     producer.send_batch(batch)
 
