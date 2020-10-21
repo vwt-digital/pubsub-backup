@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DATA_CATALOG=${1}
-PROJECT_ID=${2}
+PROJECT_ID=${1}
 
 function error_exit() {
   # ${BASH_SOURCE[1]} is the file name of the caller.
@@ -9,26 +8,29 @@ function error_exit() {
   exit "${2:-1}"
 }
 
-[[ -n "${DATA_CATALOG}" ]] || error_exit "Missing required DATA_CATALOG"
 [[ -n "${PROJECT_ID}" ]] || error_exit "Missing required PROJECT_ID"
 
-basedir=$(dirname "$0")
+schedulers=$(gcloud scheduler jobs list --project="${PROJECT_ID}" --format="value(name)" --filter="name:*azure-mirror-sub-job")
 
-curl https://stedolan.github.io/jq/download/linux64/jq > /usr/bin/jq && chmod +x /usr/bin/jq
+for scheduler in $schedulers
+do
+  gcloud scheduler jobs delete "$scheduler" --project="${PROJECT_ID}" --quiet
+done
 
-python3 "${basedir}"/body.py "${DATA_CATALOG}" > body.txt
+subscriptions=$(gcloud pubsub subscriptions list --format="value(name)" --project="${PROJECT_ID}" --filter="name:*azure-mirror-sub")
 
-while read -r body; do
-    job="$(echo "$body" | jq -r .subscription_name)-job"
-    gcloud scheduler jobs create http "${job}" \
-      --schedule="*/5 * * * *" \
-      --uri="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func/" \
-      --http-method=POST \
-      --oidc-service-account-email="${PROJECT_ID}@appspot.gserviceaccount.com" \
-      --oidc-token-audience="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func" \
-      --message-body="${body}" \
-      --max-retry-attempts 3 \
-      --max-backoff 10s \
-      --attempt-deadline 10m \
-      --project="${PROJECT_ID}"
-done < body.txt
+for subscription in $subscriptions
+do
+  job=$(echo "${subscription}-job" | rev | cut -d '/' -f 1 | rev)
+  gcloud scheduler jobs create http "${job}" \
+    --schedule="every 15 minutes" \
+    --uri="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func/" \
+    --http-method=POST \
+    --oidc-service-account-email="${PROJECT_ID}@appspot.gserviceaccount.com" \
+    --oidc-token-audience="https://europe-west1-${PROJECT_ID}.cloudfunctions.net/${PROJECT_ID}-azure-mirror-func" \
+    --message-body="${subscription}" \
+    --max-retry-attempts 3 \
+    --max-backoff 10s \
+    --attempt-deadline 10m \
+    --project="${PROJECT_ID}"
+done

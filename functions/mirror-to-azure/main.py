@@ -9,24 +9,7 @@ from azure.eventhub import EventHubProducerClient, EventData
 logging.basicConfig(level=logging.INFO)
 
 producer = None
-event_data_batch = None
-
-
-def callback(msg):
-    """
-    Callback function for pub/sub subscriber.
-    """
-
-    global event_data_batch
-    global producer
-
-    msg_json = msg.data.decode()
-    event_data_batch.add(EventData(msg_json))
-    logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-    producer.send_batch(event_data_batch)
-    event_data_batch = producer.create_batch()
-
-    msg.ack()
+subscription_path = None
 
 
 def handler(request):
@@ -35,26 +18,28 @@ def handler(request):
     and sends messages to azure event hub.
     """
 
-    global event_data_batch
     global producer
+    global subscription_path
 
-    config = json.loads(request.data.decode('utf-8'))
+    subscription_path = request.data.decode('utf-8')
+
     event_hub_connection_string = utils.get_secret(
         os.environ['PROJECT_ID'],
-        os.environ['SECRET_ID']
+        os.environ['CONNECTION_SECRET']
     )
 
-    logging.info(f"Creating Azure producer...")
+    event_hub_name = utils.get_secret(
+        os.environ['PROJECT_ID'],
+        os.environ['EVENTHUB_SECRET']
+    )
+
+    logging.info("Creating Azure producer...")
     producer = EventHubProducerClient.from_connection_string(
            conn_str=event_hub_connection_string,
-           eventhub_name=config['event_hub_name'])
-    event_data_batch = producer.create_batch()
+           eventhub_name=event_hub_name)
 
-    logging.info(f"Creating GCP subscriber...")
+    logging.info("Creating GCP subscriber...")
     subscriber = pubsub_v1.SubscriberClient()
-    subscription_path = subscriber.subscription_path(
-        config['project_id'],
-        config['subscription_name'])
     streaming_pull_future = subscriber.subscribe(
         subscription_path,
         callback=callback)
@@ -63,18 +48,31 @@ def handler(request):
 
     with subscriber:
         try:
-            streaming_pull_future.result(timeout=30)
+            streaming_pull_future.result(timeout=10)
         except Exception as e:
             streaming_pull_future.cancel()
             print(f"Listening for messages on {subscription_path} threw an exception: {e}.")
 
-    if event_data_batch.size_in_bytes > 0:
-        logging.info(f"Sending {event_data_batch.size_in_bytes} bytes of messages...")
-        producer.send_batch(event_data_batch)
-
-    subscriber.close()
     producer.close()
 
 
-if __name__ == '__main__':
-    handler(None)
+def callback(msg):
+    """
+    Callback function for pub/sub subscriber.
+    """
+
+    global producer
+    global subscription_path
+
+    event = {
+        "message": msg.data.decode(),
+        "subscription": subscription_path.split("/")[-1]
+    }
+
+    data = json.dumps(event)
+    batch = producer.create_batch()
+    batch.add(EventData(data))
+    logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
+    producer.send_batch(batch)
+
+    msg.ack()
