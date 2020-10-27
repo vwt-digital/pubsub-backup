@@ -50,11 +50,12 @@ def handler(request):
     with subscriber:
         try:
             streaming_pull_future.result(timeout=10)
-        except TimeoutError as e:
+        except TimeoutError:
             streaming_pull_future.cancel()
-            print(f"Listening for messages on {subscription_path} threw an exception: {e}.")
-
-    producer.close()
+        except Exception:
+            logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
+        finally:
+            producer.close()
 
 
 def callback(msg):
