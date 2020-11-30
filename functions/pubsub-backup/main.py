@@ -10,6 +10,9 @@ from datetime import datetime
 from google.cloud import storage
 from google.cloud import pubsub_v1
 
+from retry import retry
+from requests.exceptions import ConnectionError
+
 PROJECT_ID = os.getenv('PROJECT_ID')
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 MAX_BYTES = int(os.getenv('MAX_BYTES', '128000000'))
@@ -136,6 +139,7 @@ def pull_from_pubsub(subscription_path):
     return send_messages, ack_ids
 
 
+@retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
 def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
     client = storage.Client()
     bucket = client.get_bucket(bucket_name)
