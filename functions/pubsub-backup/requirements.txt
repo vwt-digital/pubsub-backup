@@ -15,7 +15,6 @@ grpcio==1.33.2
 idna==2.10
 libcst==0.3.14
 mypy-extensions==0.4.3
-pkg-resources==0.0.0
 proto-plus==1.11.0
 protobuf==3.14.0
 pyasn1==0.4.8
