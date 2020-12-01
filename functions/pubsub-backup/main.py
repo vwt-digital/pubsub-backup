@@ -148,7 +148,7 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
 
 
 def compress(data):
-    logging.info(f"The uncompressed size is {sys.getsizeof(str)} bytes")
+    logging.info(f"The uncompressed size is {sys.getsizeof(data)} bytes")
     compressed = gzip.compress(data.encode())
     logging.info(f"The compressed size is {sys.getsizeof(compressed)} bytes")
     return compressed
