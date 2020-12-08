@@ -1,3 +1,5 @@
+[![CodeFactor](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup/badge)](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup)
+
 # Pubsub backup function
 
 This repository contains a function to backup and compress (gzip) pubsub messages in a storage bucket. In an event-driven architecture, it may be useful to store the event history that passes a topic to a storage bucket. This facilitates the replaying of the entire event history.

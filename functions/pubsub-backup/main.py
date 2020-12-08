@@ -10,6 +10,8 @@ from datetime import datetime
 from google.cloud import storage
 from google.cloud import pubsub_v1
 
+from retry import retry
+
 PROJECT_ID = os.getenv('PROJECT_ID')
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 MAX_BYTES = int(os.getenv('MAX_BYTES', '128000000'))
@@ -35,7 +37,7 @@ def handler(request):
         logging.info("No messages to archive, exiting...")
         return 'OK', 204
 
-    id = str(uuid.uuid4())[:16]
+    unique_id = str(uuid.uuid4())[:16]
     now = datetime.now()
     epoch = int(now.strftime("%s"))
     prefix = now.strftime('%Y/%m/%d/%H')
@@ -44,7 +46,7 @@ def handler(request):
     try:
         messages_string = json.dumps(messages)
         compressed = compress(messages_string)
-        to_storage(compressed, bucket_name, prefix, epoch, id)
+        to_storage(compressed, bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
@@ -84,7 +86,6 @@ def pull_from_pubsub(subscription_path):
                 timeout=30.0)
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
-            pass
         else:
             messages = []
             mail = resp.received_messages
@@ -136,18 +137,19 @@ def pull_from_pubsub(subscription_path):
     return send_messages, ack_ids
 
 
-def to_storage(blob_bytes, bucket_name, prefix, epoch, id):
+@retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
+def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
     client = storage.Client()
     bucket = client.get_bucket(bucket_name)
-    blob_name = f"{prefix}/{epoch}-{id}.archive.gz"
+    blob_name = f"{prefix}/{epoch}-{unique_id}.archive.gz"
     blob = bucket.blob(blob_name)
     blob.upload_from_string(blob_bytes)
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
 
-def compress(str):
-    logging.info(f"The uncompressed size is {sys.getsizeof(str)} bytes")
-    compressed = gzip.compress(str.encode())
+def compress(data):
+    logging.info(f"The uncompressed size is {sys.getsizeof(data)} bytes")
+    compressed = gzip.compress(data.encode())
     logging.info(f"The compressed size is {sys.getsizeof(compressed)} bytes")
     return compressed
 
