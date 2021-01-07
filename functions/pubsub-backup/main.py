@@ -155,7 +155,7 @@ def compress(data):
 
 
 def subscription_to_bucket(subscription):
-    bucket_name = subscription.replace('sub', 'stg')
+    bucket_name = subscription.replace('sub', 'staging-stg')
     return bucket_name
 
 
