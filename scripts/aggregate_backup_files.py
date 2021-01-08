@@ -53,18 +53,25 @@ class GCSBucketProcessor:
             raise SystemError(f"{str(e)}, skipping aggregation")
 
         bucket_blobs = list(self.staging_bucket.list_blobs(prefix=self.bucket_prefix))
+        bucket_blobs_len = len(bucket_blobs)
 
-        if len(bucket_blobs) == 0:
+        if bucket_blobs_len == 0:
             return
 
         try:
             temp_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
+            cur_blob = 0
 
             with tarfile.open(fileobj=temp_file, mode='w:xz') as tar:
                 for blob in bucket_blobs:
+                    cur_blob += 1
+
                     # Skip possible previous created aggregation file
                     if f"{self.bucket_prefix}/{self.aggregated_file_name}" == blob.name:
+                        logging.info(f"Skipping... {cur_blob}/{bucket_blobs_len}")
                         continue
+
+                    logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len}")
 
                     # Get parsed blob data
                     blob_data, blob_size, blob_name = self.get_blob_data(blob)
@@ -148,7 +155,7 @@ class GCSBucketProcessor:
         logging.info(f"Copying aggregated file to '{blob_location}'")
 
         try:
-            self.staging_bucket.copy(staging_blob, self.backup_bucket, new_name=blob_name)
+            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=blob_name)
         except Exception as e:
             logging.error(f"Something went wrong during file copy: {str(e)}")
             raise
@@ -182,7 +189,7 @@ def aggregate_backup_files():
 
     topic_names = get_catalog_topic_names()
 
-    logging.info(f"Found '{len(topic_names)}' topics to aggregate")
+    logging.info(f"Found {len(topic_names)} topics to aggregate")
 
     for topic in topic_names:
         try:
