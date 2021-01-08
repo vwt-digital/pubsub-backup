@@ -1,27 +1,42 @@
-import tarfile
 import logging
+import argparse
+import json
 import tempfile
+import tarfile
 import gzip
 
 from datetime import datetime, timedelta
-from google.cloud import storage
+from google.cloud import storage, exceptions
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-c', '--data-catalog', required=True)
+parser.add_argument('-p', '--project', required=True)
+args = parser.parse_args()
+data_catalog = args.data_catalog
+project = args.project
+
+stg_client = storage.Client()
+date = datetime.now() - timedelta(2)
 
 
 class GCSBucketProcessor:
-    def __init__(self, client, bucket_name, process_date):
+    def __init__(self, client, bucket_name_prefix, process_date):
         self.client = client
 
         self.process_date = process_date
-        self.bucket_name = bucket_name
+        self.staging_bucket_name = f"{bucket_name_prefix}-hst-sa-stg"
+        self.backup_bucket_name = f"{bucket_name_prefix}-history-stg"
         self.bucket_prefix = datetime.strftime(process_date, '%Y/%m/%d')
 
-        self.aggregated_file_name = f"{bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}.tar.xz"
+        self.aggregated_file_name = f"{self.staging_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}.tar.xz"
 
-        self.bucket = self.client.get_bucket(bucket_name)
+        self.bucket = None
 
     def aggregate_blobs(self):
-        if not self.bucket:
-            raise SystemError(f"Bucket '{self.bucket_name}' does not exist")
+        try:
+            self.bucket = self.client.get_bucket(self.staging_bucket_name)
+        except exceptions.NotFound:
+            raise SystemError(f"Bucket '{self.staging_bucket_name}' does not exist, skipping aggregation")
 
         bucket_blobs = list(self.bucket.list_blobs(prefix=self.bucket_prefix))
 
@@ -76,23 +91,31 @@ class GCSBucketProcessor:
         blob.upload_from_file(temp_file, rewind=True, content_type="application/x-xz")
 
 
+def get_catalog_topic_names():
+    topic_names = []
+
+    catalog_file = open(data_catalog, "r")
+    catalog_json = json.load(catalog_file)
+
+    for dataset in catalog_json.get('dataset'):
+        for distribution in dataset.get('distribution'):
+            if distribution['format'] == 'topic':
+                topic_names.append(distribution['title'])
+
+    catalog_file.close()
+    return topic_names
+
+
 def aggregate_backup_files():
-    stg_client = storage.Client()
-    date = datetime.now() - timedelta(2)
+    topic_names = get_catalog_topic_names()
 
-    # TODO: List buckets based on ODH data-catalog
+    logging.info(f"Found '{len(topic_names)}' topics to aggregate")
 
-    buckets = [bucket.name for bucket in stg_client.list_buckets(fields='items/name') if
-               bucket.name.endswith('hst-sa-stg')]
-
-    for name in buckets:
+    for topic in topic_names:
         try:
-            GCSBucketProcessor(client=stg_client, bucket_name=name, process_date=date).aggregate_blobs()
-        except SystemError as e:
-            logging.error(str(e))
-            continue
+            GCSBucketProcessor(client=stg_client, bucket_name_prefix=topic, process_date=date).aggregate_blobs()
         except Exception as e:
-            logging.exception(e)
+            logging.error(str(e))
             continue
 
 
