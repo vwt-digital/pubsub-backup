@@ -20,7 +20,7 @@ data_catalog = args.data_catalog
 project = args.project
 
 stg_client = storage.Client()
-date = datetime.now() - timedelta(2)
+date = datetime.now() - timedelta(1)
 
 
 class GCSBucketProcessor:
