@@ -6,6 +6,7 @@ import tarfile
 import gzip
 
 from datetime import datetime, timedelta
+from google import api_core
 from google.cloud import storage, exceptions as gcp_exceptions
 from retry import retry
 
@@ -54,17 +55,19 @@ class GCSBucketProcessor:
 
         bucket_blobs = list(self.staging_bucket.list_blobs(prefix=self.bucket_prefix))
         bucket_blobs_len = len(bucket_blobs)
+        bucket_blobs_processed = []
+        cur_blob = 0
 
         if bucket_blobs_len == 0:
             return
 
-        try:
-            temp_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
-            cur_blob = 0
+        temp_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
 
-            with tarfile.open(fileobj=temp_file, mode='w:xz') as tar:
-                for blob in bucket_blobs:
+        with tarfile.open(fileobj=temp_file, mode='w:xz') as tar:
+            for blob in bucket_blobs:
+                try:
                     cur_blob += 1
+                    cur_temp_loc = temp_file.tell()
 
                     # Skip possible previous created aggregation file
                     if f"{self.bucket_prefix}/{self.aggregated_file_name}" == blob.name:
@@ -80,10 +83,14 @@ class GCSBucketProcessor:
                     info = tarfile.TarInfo(blob_name)
                     info.size = blob_size
                     tar.addfile(info, blob_data)
-        except Exception as e:
-            logging.exception(e)
-        else:
-            self.process_aggregated_file(temp_file)
+                except Exception as e:
+                    logging.error(f"Skipping... {cur_blob}/{bucket_blobs_len}: {str(e)}")
+                    temp_file.seek(cur_temp_loc)
+                    continue
+                else:
+                    bucket_blobs_processed.append(blob.name)
+
+        self.process_aggregated_file(temp_file, bucket_blobs_processed)
 
     @staticmethod
     @retry(tries=3, delay=2, backoff=2)
@@ -109,20 +116,19 @@ class GCSBucketProcessor:
 
         return temp_file, temp_size, blob.name
 
-    def process_aggregated_file(self, temp_file):
+    def process_aggregated_file(self, temp_file, processed_blobs):
         """
         Processes created aggregated file towards correct buckets.
         """
 
         try:
             staging_blob = self.save_aggregated_file(temp_file)
-            history_file_exists = self.move_aggregated_file(staging_blob)
+            self.move_aggregated_file(staging_blob)
         except Exception:
             raise
         else:
-            # TODO: Delete processed files
-
-            return history_file_exists
+            processed_blobs.append(staging_blob.name)
+            self.delete_obsolete_blobs(processed_blobs)
 
     @retry(tries=3, delay=2, backoff=2)
     def save_aggregated_file(self, temp_file):
@@ -160,7 +166,44 @@ class GCSBucketProcessor:
             logging.error(f"Something went wrong during file copy: {str(e)}")
             raise
         else:
-            return storage.Blob(bucket=self.backup_bucket, name=blob_name).exists(self.client)
+            if not storage.Blob(bucket=self.backup_bucket, name=blob_name).exists(self.client):
+                raise FileNotFoundError(f"Blob '{blob_location}' does not exist")
+
+    def delete_obsolete_blobs(self, blobs):
+        """
+        Deletes a list of blobs from the staging bucket (-hst-sa-stg).
+        """
+
+        logging.info(f"Deleting {len(blobs)} obsolete files")
+        for blob_name in blobs:
+            try:
+                self.raise_blob_event_hold(blob_name)
+            except Exception as e:
+                logging.error(f"Failed to raise event-based hold of blob '{blob_name}', skipping deletion: {str(e)}")
+                continue
+
+            try:
+                retry_policy = api_core.retry.Retry(deadline=60)
+                self.staging_bucket.delete_blob(blob_name, retry=retry_policy)
+            except Exception as e:
+                logging.error(f"Failed to delete blob '{blob_name}', resetting event-based hold: {str(e)}")
+
+                self.reset_blob_event_hold(blob_name)
+                continue
+
+    @retry(tries=3, delay=2, backoff=2)
+    def raise_blob_event_hold(self, blob_name):
+        blob = self.staging_bucket.blob(blob_name)
+
+        blob.event_based_hold = False
+        blob.patch()
+
+    @retry(tries=3, delay=2, backoff=2)
+    def reset_blob_event_hold(self, blob_name):
+        blob = self.staging_bucket.blob(blob_name)
+
+        blob.event_based_hold = True
+        blob.patch()
 
 
 def get_catalog_topic_names():
