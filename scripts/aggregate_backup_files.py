@@ -5,7 +5,7 @@ import tempfile
 import tarfile
 import gzip
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from google import api_core
 from google.cloud import storage, exceptions as gcp_exceptions
 from retry import retry
@@ -31,13 +31,17 @@ class GCSBucketProcessor:
 
         self.client = client
 
+        self.current_datetime = datetime.now().replace(tzinfo=timezone.utc).timestamp()
         self.process_date = process_date
+
         self.bucket_name_prefix = bucket_name_prefix
         self.staging_bucket_name = f"{bucket_name_prefix}-hst-sa-stg"
         self.backup_bucket_name = f"{bucket_name_prefix}-history-stg"
         self.bucket_prefix = datetime.strftime(process_date, '%Y/%m/%d')
 
-        self.aggregated_file_name = f"{self.staging_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}.tar.xz"
+        self.aggregated_file_name_prefix = \
+            f"{self.bucket_prefix}/{self.staging_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
+        self.aggregated_file_name = f"{self.aggregated_file_name_prefix}_{self.current_datetime}.tar.xz"
 
         self.staging_bucket = None
         self.backup_bucket = None
@@ -70,7 +74,7 @@ class GCSBucketProcessor:
                     cur_temp_loc = temp_file.tell()
 
                     # Skip possible previous created aggregation file
-                    if f"{self.bucket_prefix}/{self.aggregated_file_name}" == blob.name:
+                    if self.aggregated_file_name_prefix in blob.name:
                         logging.info(f"Skipping... {cur_blob}/{bucket_blobs_len}")
                         continue
 
@@ -136,12 +140,11 @@ class GCSBucketProcessor:
         Saves aggregated file towards staging bucket (-hst-sa-stg).
         """
 
-        blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name}"
-        blob_location = f"gs://{self.staging_bucket_name}/{blob_name}"
+        blob_location = f"gs://{self.staging_bucket_name}/{self.aggregated_file_name}"
         logging.info(f"Uploading aggregated file to '{blob_location}'")
 
         try:
-            blob = self.staging_bucket.blob(blob_name)
+            blob = self.staging_bucket.blob(self.aggregated_file_name)
             blob.upload_from_file(temp_file, rewind=True, content_type="application/x-xz")
         except Exception as e:
             logging.error(f"Something went wrong during file upload: {str(e)}")
@@ -156,17 +159,16 @@ class GCSBucketProcessor:
         Copies aggregated file towards history bucket (-history-stg).
         """
 
-        blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name}"
-        blob_location = f"gs://{self.backup_bucket_name}/{blob_name}"
+        blob_location = f"gs://{self.backup_bucket_name}/{self.aggregated_file_name}"
         logging.info(f"Copying aggregated file to '{blob_location}'")
 
         try:
-            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=blob_name)
+            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=self.aggregated_file_name)
         except Exception as e:
             logging.error(f"Something went wrong during file copy: {str(e)}")
             raise
         else:
-            if not storage.Blob(bucket=self.backup_bucket, name=blob_name).exists(self.client):
+            if not storage.Blob(bucket=self.backup_bucket, name=self.aggregated_file_name).exists(self.client):
                 raise FileNotFoundError(f"Blob '{blob_location}' does not exist")
 
     def delete_obsolete_blobs(self, blobs):
