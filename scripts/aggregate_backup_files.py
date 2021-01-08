@@ -63,6 +63,7 @@ class GCSBucketProcessor:
         cur_blob = 0
 
         if bucket_blobs_len == 0:
+            logging.info('Found no backup files')
             return
 
         temp_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
