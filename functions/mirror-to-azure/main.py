@@ -57,6 +57,8 @@ def handler(request):
         finally:
             producer.close()
 
+    return 'OK', 204
+
 
 def callback(msg):
     """
