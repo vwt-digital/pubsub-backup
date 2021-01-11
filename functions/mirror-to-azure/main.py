@@ -8,6 +8,7 @@ from concurrent.futures import TimeoutError
 from azure.eventhub import EventHubProducerClient, EventData
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
 producer = None
 subscription_path = None
