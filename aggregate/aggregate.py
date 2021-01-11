@@ -3,7 +3,7 @@ import argparse
 import json
 import tempfile
 import tarfile
-import gzip
+import zlib
 
 from datetime import datetime, timedelta, timezone
 from google import api_core
@@ -82,12 +82,17 @@ class GCSBucketProcessor:
                     logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len}")
 
                     # Get parsed blob data
-                    blob_data, blob_size, blob_name = self.get_blob_data(blob)
+                    blob_data, blob_name = self.get_blob_data(blob)
 
                     # Add file and info to tar
-                    info = tarfile.TarInfo(blob_name)
-                    info.size = blob_size
-                    tar.addfile(info, blob_data)
+                    with tempfile.TemporaryFile(mode='w+b') as data_temp_file:
+                        data_temp_file.write(blob_data)
+
+                        info = tarfile.TarInfo(blob_name)
+                        info.size = data_temp_file.tell()
+
+                        data_temp_file.seek(0)
+                        tar.addfile(info, data_temp_file)
                 except Exception as e:
                     logging.error(f"Skipping... {cur_blob}/{bucket_blobs_len}: {str(e)}")
                     temp_file.seek(cur_temp_loc)
@@ -104,22 +109,14 @@ class GCSBucketProcessor:
         Retrieves blob data from GCS bucket, does parse .gz files first.
         """
 
-        temp_file = tempfile.TemporaryFile(mode='w+b')
-        blob.download_to_file(temp_file)
-        temp_size = temp_file.tell()
-        temp_file.seek(0)
+        blob_string = blob.download_as_string()
+        blob_name = blob.name
 
         if blob.name.endswith('.gz'):
-            decompressed_file = gzip.GzipFile(fileobj=temp_file, mode='rb')
-            dc_temp_file = tempfile.TemporaryFile(mode='w+b')
-            dc_temp_file.write(decompressed_file.read())
-            dc_temp_size = temp_file.tell()
+            blob_string = zlib.decompress(blob_string, 16 + zlib.MAX_WBITS)
+            blob_name = blob_name.replace('.archive.gz', '.json')
 
-            dc_temp_file.seek(0)
-            temp_file.close()
-            return dc_temp_file, dc_temp_size, blob.name.replace('.archive.gz', '.json')
-
-        return temp_file, temp_size, blob.name
+        return blob_string, blob_name
 
     def process_aggregated_file(self, temp_file, processed_blobs):
         """
