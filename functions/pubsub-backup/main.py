@@ -81,9 +81,10 @@ def pull_from_pubsub(subscription_path):
 
         try:
             resp = client.pull(
-                subscription_path,
-                max_messages=MAX_MESSAGES,
-                timeout=30.0)
+                request={
+                    "subscription": subscription_path,
+                    "max_messages": MAX_MESSAGES
+                }, timeout=30.0)
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
