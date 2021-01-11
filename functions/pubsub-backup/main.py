@@ -55,7 +55,11 @@ def handler(request):
         logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            client.acknowledge(subscription_path, batch)
+            client.acknowledge(
+                request={
+                    "subscription": subscription_path,
+                    "ack_ids": batch
+                })
             logging.info(f"Acknowledged {len(batch)} message(s)...")
         logging.info(f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}")
     except Exception as e:
