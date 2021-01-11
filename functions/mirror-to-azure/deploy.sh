@@ -14,7 +14,7 @@ function error_exit() {
 
 gcloud functions deploy "${PROJECT_ID}-azure-mirror-func" \
   --entry-point=handler \
-  --runtime=python37 \
+  --runtime=python38 \
   --trigger-http \
   --project="${PROJECT_ID}" \
   --region=europe-west1 \

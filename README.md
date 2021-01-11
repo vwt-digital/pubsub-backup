@@ -1,17 +1,17 @@
-[![CodeFactor](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup/badge)](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup)
+# Pub/Sub backup
 
-# Pubsub backup function
+This repository contains multiple functions to backup and process Pub/Sub Topics automatically.
 
-This repository contains a function to backup and compress (gzip) pubsub messages in a storage bucket. In an event-driven architecture, it may be useful to store the event history that passes a topic to a storage bucket. This facilitates the replaying of the entire event history.
+## Functions
+The following functions can be found in this repository:
+- `mirror-to-azure`: A function to automatically mirror certain Pub/Sub Topic towards an Azure EventHub;
+- `pubsub-backup`: A function to automatically backup certain Pub/Sub Topic towards a GCS Bucket.
 
-![pubsub backup](pubsub-backup.svg)
 
-There are several helper scripts included:
+## Scripts
+Furthermore, the following scripts can be found in this repository:
+- `aggregate`: A script to aggregate topic backup files from a certain day;
+- `backload`: A script to backload messages from message history into a topic.
 
-- deploy.sh: deploy the backup function to Google.
-- schedule.sh: create a backup scheduler which will post a request to the backup function.
-- post.sh: test the backup function with a http POST request with Bearer token.
-
-Note: backup bucket not included!
-
-Literature: [Pub/sub push subscriptions](https://cloud.google.com/pubsub/docs/push)
+## License
+[GPL-3](https://www.gnu.org/licenses/gpl-3.0.en.html)

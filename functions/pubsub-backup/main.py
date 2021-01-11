@@ -55,7 +55,11 @@ def handler(request):
         logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            client.acknowledge(subscription_path, batch)
+            client.acknowledge(
+                request={
+                    "subscription": subscription_path,
+                    "ack_ids": batch
+                })
             logging.info(f"Acknowledged {len(batch)} message(s)...")
         logging.info(f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}")
     except Exception as e:
@@ -81,9 +85,10 @@ def pull_from_pubsub(subscription_path):
 
         try:
             resp = client.pull(
-                subscription_path,
-                max_messages=MAX_MESSAGES,
-                timeout=30.0)
+                request={
+                    "subscription": subscription_path,
+                    "max_messages": MAX_MESSAGES
+                }, timeout=30.0)
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
