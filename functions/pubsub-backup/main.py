@@ -87,7 +87,7 @@ def pull_from_pubsub(subscription_path):
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
-                }, retry=google_retry.Retry(deadline=30))
+                }, retry=google_retry.Retry(deadline=5))
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
@@ -104,6 +104,10 @@ def pull_from_pubsub(subscription_path):
 
         logging.info(f"Appending {len(messages)} message(s)...")
         send_messages.extend(messages)
+
+        # If there are no messsages at all, stop immediate
+        if len(mail) == 0:
+            break
 
         # Finish when total messages is reached or time expired
         if len(send_messages) > TOTAL_MESSAGES:
