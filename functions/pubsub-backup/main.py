@@ -5,7 +5,6 @@ import time
 import logging
 import uuid
 import gzip
-import resource
 
 from datetime import datetime
 from google.cloud import storage
@@ -73,6 +72,7 @@ def handler(request):
 def pull_from_pubsub(subscription_path):
 
     small = 0
+    size = 0
     ack_ids = []
     send_messages = []
 
@@ -87,7 +87,7 @@ def pull_from_pubsub(subscription_path):
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
-                }, retry=google_retry.Retry(deadline=5))
+                }, retry=google_retry.Retry(deadline=5), timeout=5)
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
@@ -126,7 +126,8 @@ def pull_from_pubsub(subscription_path):
             small = 0
 
         # Finish when total messages reaches maximum size in bytes
-        if resource.getrusage(resource.RUSAGE_SELF).ru_maxrss >= MAX_BYTES/1024:
+        size = size + sys.getsizeof(json.dumps(messages))
+        if size >= MAX_BYTES:
             logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
             break
 
