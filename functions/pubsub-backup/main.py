@@ -5,16 +5,17 @@ import time
 import logging
 import uuid
 import gzip
+import resource
 
 from datetime import datetime
 from google.cloud import storage
 from google.cloud import pubsub_v1
+from google.api_core import retry as google_retry
 
 from retry import retry
 
 PROJECT_ID = os.getenv('PROJECT_ID')
-MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
-MAX_BYTES = int(os.getenv('MAX_BYTES', '128000000'))
+MAX_BYTES = int(os.getenv('MAX_BYTES', '201326592'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
@@ -39,7 +40,7 @@ def handler(request):
 
     unique_id = str(uuid.uuid4())[:16]
     now = datetime.now()
-    epoch = int(now.strftime("%s"))
+    epoch = int(now.timestamp())
     prefix = now.strftime('%Y/%m/%d/%H')
     bucket_name = subscription_to_bucket(subscription)
 
@@ -71,8 +72,6 @@ def handler(request):
 
 def pull_from_pubsub(subscription_path):
 
-    size = 0
-    retry = 0
     small = 0
     ack_ids = []
     send_messages = []
@@ -88,7 +87,7 @@ def pull_from_pubsub(subscription_path):
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
-                }, timeout=30.0)
+                }, retry=google_retry.Retry(deadline=30))
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
@@ -102,15 +101,6 @@ def pull_from_pubsub(subscription_path):
                     logging.warning(f"Json could not be parsed, skipping msg from subscription: {subscription_path}")
                 messages.append(message)
                 ack_ids.append(msg.ack_id)
-
-        # Retry until max_retries
-        if len(mail) == 0:
-            retry += 1
-            if retry >= MAX_RETRIES:
-                logging.info(f"Max retries ({retry}) exceeded, exiting loop..")
-                break
-            logging.info(f"Found no messages, retry {retry}/{MAX_RETRIES}..")
-            continue
 
         logging.info(f"Appending {len(messages)} message(s)...")
         send_messages.extend(messages)
@@ -132,8 +122,7 @@ def pull_from_pubsub(subscription_path):
             small = 0
 
         # Finish when total messages reaches maximum size in bytes
-        size = size + sys.getsizeof(json.dumps(messages))
-        if size >= MAX_BYTES:
+        if resource.getrusage(resource.RUSAGE_SELF).ru_maxrss >= MAX_BYTES/1024:
             logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
             break
 
