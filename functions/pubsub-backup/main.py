@@ -87,7 +87,7 @@ def pull_from_pubsub(subscription_path):
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
-                }, retry=google_retry.Retry(deadline=5), timeout=5)
+                }, retry=google_retry.Retry(deadline=5))
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
