@@ -14,7 +14,7 @@ from google.api_core import retry as google_retry
 from retry import retry
 
 PROJECT_ID = os.getenv('PROJECT_ID')
-MAX_BYTES = int(os.getenv('MAX_BYTES', '201326592'))
+MAX_BYTES = int(os.getenv('MAX_BYTES', '134217728'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
@@ -44,8 +44,7 @@ def handler(request):
     bucket_name = subscription_to_bucket(subscription)
 
     try:
-        messages_string = json.dumps(messages)
-        compressed = compress(messages_string)
+        compressed = compress(json.dumps(messages))
         to_storage(compressed, bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
@@ -87,7 +86,7 @@ def pull_from_pubsub(subscription_path):
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
-                }, retry=google_retry.Retry(deadline=5))
+                }, retry=google_retry.Retry(deadline=10))
         except Exception as e:
             print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
         else:
@@ -102,8 +101,9 @@ def pull_from_pubsub(subscription_path):
                 messages.append(message)
                 ack_ids.append(msg.ack_id)
 
-        logging.info(f"Appending {len(messages)} message(s)...")
-        send_messages.extend(messages)
+            logging.info(f"Appending {len(messages)} message(s)...")
+            send_messages.extend(messages)
+            size = size + sys.getsizeof(json.dumps(messages))
 
         # If there are no messsages at all, stop immediate
         if len(mail) == 0:
@@ -112,6 +112,7 @@ def pull_from_pubsub(subscription_path):
         # Finish when total messages is reached or time expired
         if len(send_messages) > TOTAL_MESSAGES:
             break
+
         if (time.time() - start) > FUNCTION_TIMEOUT:
             break
 
@@ -126,7 +127,6 @@ def pull_from_pubsub(subscription_path):
             small = 0
 
         # Finish when total messages reaches maximum size in bytes
-        size = size + sys.getsizeof(json.dumps(messages))
         if size >= MAX_BYTES:
             logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
             break
