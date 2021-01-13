@@ -14,6 +14,7 @@ from google.api_core import retry as google_retry
 from retry import retry
 
 PROJECT_ID = os.getenv('PROJECT_ID')
+BRANCH_NAME = os.getenv('BRANCH_NAME')
 MAX_BYTES = int(os.getenv('MAX_BYTES', '134217728'))
 MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
 TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
@@ -154,7 +155,12 @@ def compress(data):
 
 
 def subscription_to_bucket(subscription):
-    bucket_name = subscription.replace('sub', 'stg')
+    # TODO: Merge production to staging bucket
+    if BRANCH_NAME == "develop" and '-history-sub' in subscription:
+        bucket_name = subscription.replace('-history-sub', '-hst-sa-stg')
+    else:
+        bucket_name = subscription.replace('sub', 'stg')
+
     return bucket_name
 
 
