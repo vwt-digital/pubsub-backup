@@ -7,8 +7,7 @@ import uuid
 import gzip
 
 from datetime import datetime
-from google.cloud import storage
-from google.cloud import pubsub_v1
+from google.cloud import storage, pubsub_v1, exceptions as gcp_exceptions
 from google.api_core import retry as google_retry
 
 from retry import retry
@@ -21,13 +20,14 @@ TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 MAX_SMALL_BATCHES = int(os.getenv('MAX_SMALL_BATCHES', '10'))
 
-client = pubsub_v1.SubscriberClient()
+ps_client = pubsub_v1.SubscriberClient()
+stg_client = storage.Client()
 
 
 def handler(request):
     try:
         subscription = request.data.decode('utf-8')
-        subscription_path = client.subscription_path(PROJECT_ID, subscription)
+        subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
         logging.info(f"Starting to archive messages from {subscription_path}...")
         messages, ack_ids = pull_from_pubsub(subscription_path)
     except Exception as e:
@@ -55,7 +55,7 @@ def handler(request):
         logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            client.acknowledge(
+            ps_client.acknowledge(
                 request={
                     "subscription": subscription_path,
                     "ack_ids": batch
@@ -83,7 +83,7 @@ def pull_from_pubsub(subscription_path):
         mail = []
 
         try:
-            resp = client.pull(
+            resp = ps_client.pull(
                 request={
                     "subscription": subscription_path,
                     "max_messages": MAX_MESSAGES
@@ -139,8 +139,7 @@ def pull_from_pubsub(subscription_path):
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
 def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
-    client = storage.Client()
-    bucket = client.get_bucket(bucket_name)
+    bucket = stg_client.get_bucket(bucket_name)
     blob_name = f"{prefix}/{epoch}-{unique_id}.archive.gz"
     blob = bucket.blob(blob_name)
     blob.upload_from_string(blob_bytes)
@@ -156,10 +155,17 @@ def compress(data):
 
 def subscription_to_bucket(subscription):
     # TODO: Merge production to staging bucket
-    if BRANCH_NAME == "develop" and '-history-sub' in subscription:
-        bucket_name = subscription.replace('-history-sub', '-hst-sa-stg')
-    else:
-        bucket_name = subscription.replace('sub', 'stg')
+    bucket_name = subscription.replace('sub', 'stg')
+
+    # Check if staging bucket exists, otherwise fallback to default backup bucket
+    if BRANCH_NAME == "develop" and subscription.endswith('-history-sub'):
+        try:
+            bucket_staging_name = subscription.replace('-history-sub', '-hst-sa-stg')
+            stg_client.get_bucket(bucket_staging_name)
+        except gcp_exceptions.NotFound:
+            pass
+        else:
+            bucket_name = bucket_staging_name
 
     return bucket_name
 
