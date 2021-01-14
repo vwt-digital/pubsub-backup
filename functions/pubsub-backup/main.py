@@ -5,6 +5,7 @@ import time
 import logging
 import uuid
 import gzip
+import threading
 
 from google.cloud import storage
 from google.cloud import pubsub_v1
@@ -15,8 +16,6 @@ from retry import retry
 
 PROJECT_ID = os.getenv('PROJECT_ID')
 BRANCH_NAME = os.getenv('BRANCH_NAME')
-MAX_BYTES = int(os.getenv('MAX_BYTES', '134217728'))
-TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 
 ps_client = pubsub_v1.SubscriberClient()
@@ -25,21 +24,26 @@ stg_client = storage.Client()
 messages = []
 ack_ids = []
 
+messages_lock = threading.Lock()
+
 
 def handler(request):
     try:
         subscription = request.data.decode('utf-8')
         subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
         logging.info(f"Starting to archive messages from {subscription_path}...")
-        pull(subscription_path)
+        pull(subscription, subscription_path)
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return 'ERROR', 501
 
     if not messages:
         logging.info("No messages to archive, exiting...")
-        return 'OK', 204
 
+    return 'OK', 204
+
+
+def write_to_file(subscription, messages):
     unique_id = str(uuid.uuid4())[:16]
     now = datetime.now()
     epoch = int(now.timestamp())
@@ -53,8 +57,8 @@ def handler(request):
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
 
-    global ack_ids
 
+def ack(subscription_path, ack_ids):
     try:
         logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
@@ -69,10 +73,8 @@ def handler(request):
         logging.exception(f"Acknowleding failed, reason: {e}")
         return 'ERROR', 501
 
-    return 'OK', 204
 
-
-def pull(subscription_path):
+def pull(subscription, subscription_path):
     global ack_ids
     global messages
 
@@ -82,24 +84,18 @@ def pull(subscription_path):
     streaming_pull_future = ps_client.subscribe(
                         subscription_path,
                         callback=callback,
-                        flow_control=pubsub_v1.types.FlowControl(max_messages=TOTAL_MESSAGES))
+                        flow_control=pubsub_v1.types.FlowControl(max_messages=10000))
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
     try:
-        last_nr_messages = len(ack_ids)
+        last_nr_messages = len(messages)
         start = datetime.now()
         time.sleep(5)
 
         while True:
-
-            # Less thann 50 messages stop collecting
-            if len(ack_ids)-last_nr_messages < 50:
-                streaming_pull_future.cancel()
-                break
-
-            # if the total size of the messages is more than MAX_BYTES stop collecting
-            if sys.getsizeof(json.dumps(messages)) > MAX_BYTES:
+            # Less than 50 messages stop collecting
+            if len(messages)-last_nr_messages < 50:
                 streaming_pull_future.cancel()
                 break
 
@@ -108,13 +104,29 @@ def pull(subscription_path):
                 streaming_pull_future.cancel()
                 break
 
-            last_nr_messages = len(ack_ids)
-            time.sleep(5)
+            if len(messages) > 5000:
+                messages_lock.acquire()
+                messages_for_file = messages.copy()
+                messages.clear()
+                ack_ids_for_file = ack_ids.copy()
+                ack_ids.clear()
+                messages_lock.release()
+
+                write_to_file(subscription, messages_for_file)
+                ack(subscription_path, ack_ids_for_file)
+
+            last_nr_messages = len(messages)
+            time.sleep(1)
 
     except TimeoutError:
         streaming_pull_future.cancel()
     except Exception:
         logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
+
+    # Finally:
+    if len(messages) > 0:
+        write_to_file(subscription, messages)
+        ack(subscription_path, ack_ids)
 
 
 def callback(msg):
@@ -124,8 +136,12 @@ def callback(msg):
     global messages
     global ack_ids
 
+    messages_lock.acquire()
+
     messages.append(json.loads(msg.data.decode()))
     ack_ids.append(msg.ack_id)
+
+    messages_lock.release()
 
     if len(messages) % 1000 == 0:
         logging.info("Received {} msgs".format(len(messages)))
