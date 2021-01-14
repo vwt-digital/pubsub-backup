@@ -27,10 +27,6 @@ ack_ids = []
 
 
 def handler(request):
-    del messages
-    del ack_ids
-
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
     try:
         subscription = request.data.decode('utf-8')
         subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
