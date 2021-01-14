@@ -94,14 +94,17 @@ def pull(subscription_path):
 
                 # Less thann 50 messages stop collecting
                 if len(ack_ids)-last_nr_messages < 50:
+                    streaming_pull_future.cancel()
                     break
 
                 # if the total size of the messages is more than MAX_BYTES stop collecting
                 if sys.getsizeof(json.dumps(messages)) > MAX_BYTES:
+                    streaming_pull_future.cancel()
                     break
 
                 # limit the duration of the function
                 if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
+                    streaming_pull_future.cancel()
                     break
 
                 last_nr_messages = len(ack_ids)
