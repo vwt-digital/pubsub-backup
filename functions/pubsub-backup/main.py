@@ -27,6 +27,9 @@ ack_ids = []
 
 
 def handler(request):
+    del messages
+    del ack_ids
+
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
     try:
         subscription = request.data.decode('utf-8')
@@ -75,16 +78,17 @@ def pull(subscription_path):
     global ack_ids
     global messages
 
-    subscriber = pubsub_v1.SubscriberClient()
+    messages.clear()
+    ack_ids.clear()
 
-    streaming_pull_future = subscriber.subscribe(
+    streaming_pull_future = ps_client.subscribe(
                         subscription_path,
                         callback=callback,
                         flow_control=pubsub_v1.types.FlowControl(max_messages=TOTAL_MESSAGES))
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
-    with subscriber:
+    with ps_client:
         try:
             last_nr_messages = len(ack_ids)
             start = datetime.now()
