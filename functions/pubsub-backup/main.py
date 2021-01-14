@@ -53,6 +53,8 @@ def handler(request):
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
 
+    global ack_ids
+
     try:
         logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
@@ -108,7 +110,7 @@ def pull(subscription_path):
                     break
 
                 last_nr_messages = len(ack_ids)
-                time.sleep(2)
+                time.sleep(5)
 
         except TimeoutError:
             streaming_pull_future.cancel()
