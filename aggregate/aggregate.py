@@ -156,8 +156,7 @@ class GCSBucketProcessor:
             raise
         else:
             processed_blobs.append(staging_blob.name)
-            logging.info(f"Processed {len(processed_blobs)} files, skipping deletion for pilot phase")
-            # self.delete_obsolete_blobs(processed_blobs)
+            self.delete_obsolete_blobs(processed_blobs)
 
     @retry(tries=3, delay=2, backoff=2)
     def save_aggregated_file(self, temp_file):
