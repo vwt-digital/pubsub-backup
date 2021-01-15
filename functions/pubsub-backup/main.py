@@ -84,7 +84,7 @@ def pull(subscription, subscription_path):
     streaming_pull_future = ps_client.subscribe(
                         subscription_path,
                         callback=callback,
-                        flow_control=pubsub_v1.types.FlowControl(max_messages=25000))
+                        flow_control=pubsub_v1.types.FlowControl(max_messages=50000))
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
