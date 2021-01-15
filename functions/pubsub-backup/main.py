@@ -14,6 +14,8 @@ from datetime import datetime
 
 from retry import retry
 
+logging.basicConfig(level=logging.INFO)
+
 PROJECT_ID = os.getenv('PROJECT_ID')
 BRANCH_NAME = os.getenv('BRANCH_NAME')
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
