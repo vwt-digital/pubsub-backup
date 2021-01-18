@@ -1,10 +1,8 @@
 import os
-import sys
 import json
 import time
 import logging
 import uuid
-import gzip
 import threading
 
 from google.cloud import storage
@@ -54,8 +52,7 @@ def write_to_file(subscription, messages):
     bucket_name = subscription_to_bucket(subscription)
 
     try:
-        compressed = compress(json.dumps(messages))
-        to_storage(compressed, bucket_name, prefix, epoch, unique_id)
+        to_storage(json.dumps(messages), bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
@@ -63,7 +60,6 @@ def write_to_file(subscription, messages):
 
 def ack(subscription_path, ack_ids):
     try:
-        logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
             ps_client.acknowledge(
@@ -160,13 +156,6 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
     blob = bucket.blob(blob_name)
     blob.upload_from_string(blob_bytes)
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
-
-
-def compress(data):
-    logging.info(f"The uncompressed size is {sys.getsizeof(data)} bytes")
-    compressed = gzip.compress(data.encode())
-    logging.info(f"The compressed size is {sys.getsizeof(compressed)} bytes")
-    return compressed
 
 
 def subscription_to_bucket(subscription):
