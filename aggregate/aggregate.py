@@ -32,16 +32,15 @@ class GCSBucketProcessor:
         self.client = client
 
         self.process_date = process_date
-        self.current_timestamp = int(datetime.utcnow().strftime('%s'))
 
         self.bucket_name_prefix = bucket_name_prefix
         self.staging_bucket_name = f"{bucket_name_prefix}-hst-sa-stg"
         self.backup_bucket_name = f"{bucket_name_prefix}-history-stg"
         self.bucket_prefix = datetime.strftime(process_date, '%Y/%m/%d')
 
-        self.aggregated_file_name_prefix = f"{self.staging_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
-        self.aggregated_json_name = f"{self.aggregated_file_name_prefix}_{self.current_timestamp}.json"
-        self.aggregated_blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name_prefix}_{self.current_timestamp}.tar.xz"
+        self.aggregated_file_name_prefix = f"{self.backup_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
+        self.aggregated_json_name = f"{self.aggregated_file_name_prefix}.json"
+        self.aggregated_blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name_prefix}.tar.xz"
 
         self.staging_bucket = None
         self.backup_bucket = None
@@ -117,13 +116,14 @@ class GCSBucketProcessor:
 
         self.process_aggregated_file(temp_tar_file, bucket_blobs_processed)
 
-    def add_blob_to_tar(self, tar_file, blob_data, blob_name):
+    @staticmethod
+    def add_blob_to_tar(tar_file, blob_data, blob_name):
         with tempfile.TemporaryFile(mode='w+b') as data_temp_file:
             data_temp_file.write(blob_data)
 
             info = tarfile.TarInfo(blob_name.split('/')[-1])
             info.size = data_temp_file.tell()
-            info.mtime = self.current_timestamp
+            info.mtime = int(datetime.utcnow().strftime('%s'))
 
             data_temp_file.seek(0)
             tar_file.addfile(info, data_temp_file)
