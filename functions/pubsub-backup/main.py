@@ -15,6 +15,7 @@ from datetime import datetime
 from retry import retry
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
 PROJECT_ID = os.getenv('PROJECT_ID')
 BRANCH_NAME = os.getenv('BRANCH_NAME')
@@ -86,7 +87,7 @@ def pull(subscription, subscription_path):
     streaming_pull_future = ps_client.subscribe(
                         subscription_path,
                         callback=callback,
-                        flow_control=pubsub_v1.types.FlowControl(max_messages=50000))
+                        flow_control=pubsub_v1.types.FlowControl(max_messages=75000))
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
@@ -108,11 +109,14 @@ def pull(subscription, subscription_path):
 
             if len(messages) > 5000:
                 messages_lock.acquire()
-                messages_for_file = messages.copy()
-                messages.clear()
-                ack_ids_for_file = ack_ids.copy()
-                ack_ids.clear()
-                messages_lock.release()
+
+                try:
+                    messages_for_file = messages.copy()
+                    messages.clear()
+                    ack_ids_for_file = ack_ids.copy()
+                    ack_ids.clear()
+                finally:
+                    messages_lock.release()
 
                 write_to_file(subscription, messages_for_file)
                 ack(subscription_path, ack_ids_for_file)
@@ -139,11 +143,11 @@ def callback(msg):
     global ack_ids
 
     messages_lock.acquire()
-
-    messages.append(json.loads(msg.data.decode()))
-    ack_ids.append(msg.ack_id)
-
-    messages_lock.release()
+    try:
+        messages.append(json.loads(msg.data.decode()))
+        ack_ids.append(msg.ack_id)
+    finally:
+        messages_lock.release()
 
     if len(messages) % 1000 == 0:
         logging.info("Received {} msgs".format(len(messages)))
