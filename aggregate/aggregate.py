@@ -183,17 +183,36 @@ class GCSBucketProcessor:
         Copies aggregated file towards history bucket (-history-stg).
         """
 
-        blob_location = f"gs://{self.backup_bucket_name}/{self.aggregated_blob_name}"
+        if not storage.Blob(bucket=self.backup_bucket, name=self.aggregated_blob_name).exists(self.client):
+            new_blob_name = self.aggregated_blob_name
+        else:
+            new_blob_name = self.check_aggregated_file_name(self.client, self.backup_bucket, self.aggregated_blob_name)
+
+        blob_location = f"gs://{self.backup_bucket_name}/{new_blob_name}"
         logging.info(f"Copying aggregated file to '{blob_location}'")
 
         try:
-            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=self.aggregated_blob_name)
+            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=new_blob_name)
         except Exception as e:
             logging.error(f"Something went wrong during file copy: {str(e)}")
             raise
         else:
-            if not storage.Blob(bucket=self.backup_bucket, name=self.aggregated_blob_name).exists(self.client):
+            if not storage.Blob(bucket=self.backup_bucket, name=new_blob_name).exists(self.client):
                 raise FileNotFoundError(f"Blob '{blob_location}' does not exist")
+
+    @staticmethod
+    def check_aggregated_file_name(client, bucket, blob_name):
+        new_blob_name = None
+        count = 0
+
+        while not new_blob_name:
+            name = blob_name.replace(".tar.xz", f"_{count}.tar.xz")
+            if not storage.Blob(bucket=bucket, name=name).exists(client):
+                new_blob_name = name
+            else:
+                count += 1
+
+        return new_blob_name
 
     def delete_obsolete_blobs(self, blobs):
         """
