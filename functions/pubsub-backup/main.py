@@ -151,9 +151,9 @@ def callback(msg):
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
 def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
     bucket = stg_client.get_bucket(bucket_name)
-    blob_name = f"{prefix}/{epoch}-{unique_id}.archive.gz"
+    blob_name = f"{prefix}/{epoch}-{unique_id}.json"
     blob = bucket.blob(blob_name)
-    blob.upload_from_string(blob_bytes)
+    blob.upload_from_string(blob_bytes, content_type="application/json")
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
 
