@@ -1,167 +1,163 @@
 import os
-import sys
 import json
 import time
 import logging
 import uuid
-import gzip
+import threading
 
-from datetime import datetime
 from google.cloud import storage
 from google.cloud import pubsub_v1
+from datetime import datetime
 
 from retry import retry
 
-PROJECT_ID = os.getenv('PROJECT_ID')
-MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
-MAX_BYTES = int(os.getenv('MAX_BYTES', '128000000'))
-MAX_MESSAGES = int(os.getenv('MAX_MESSAGES', '1000'))
-TOTAL_MESSAGES = int(os.getenv('TOTAL_MESSAGES', '250000'))
-FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
-MAX_SMALL_BATCHES = int(os.getenv('MAX_SMALL_BATCHES', '10'))
+logging.basicConfig(level=logging.INFO)
+logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
-client = pubsub_v1.SubscriberClient()
+PROJECT_ID = os.getenv('PROJECT_ID')
+FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
+
+ps_client = pubsub_v1.SubscriberClient()
+stg_client = storage.Client()
+
+messages = []
+ack_ids = []
+
+messages_lock = threading.Lock()
 
 
 def handler(request):
     try:
         subscription = request.data.decode('utf-8')
-        subscription_path = client.subscription_path(PROJECT_ID, subscription)
+        subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
         logging.info(f"Starting to archive messages from {subscription_path}...")
-        messages, ack_ids = pull_from_pubsub(subscription_path)
+        pull(subscription, subscription_path)
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return 'ERROR', 501
 
     if not messages:
         logging.info("No messages to archive, exiting...")
-        return 'OK', 204
 
+    return 'OK', 204
+
+
+def write_to_file(subscription, messages):
     unique_id = str(uuid.uuid4())[:16]
     now = datetime.now()
-    epoch = int(now.strftime("%s"))
+    epoch = int(now.timestamp())
     prefix = now.strftime('%Y/%m/%d/%H')
     bucket_name = subscription_to_bucket(subscription)
 
     try:
-        messages_string = json.dumps(messages)
-        compressed = compress(messages_string)
-        to_storage(compressed, bucket_name, prefix, epoch, unique_id)
+        to_storage(json.dumps(messages), bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
 
+
+def ack(subscription_path, ack_ids):
     try:
-        logging.info(f"Going to acknowledge {len(ack_ids)} message(s) from {subscription_path}...")
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            client.acknowledge(
+            ps_client.acknowledge(
                 request={
                     "subscription": subscription_path,
                     "ack_ids": batch
                 })
-            logging.info(f"Acknowledged {len(batch)} message(s)...")
         logging.info(f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}")
     except Exception as e:
         logging.exception(f"Acknowleding failed, reason: {e}")
         return 'ERROR', 501
 
-    return 'OK', 204
 
+def pull(subscription, subscription_path):
+    global ack_ids
+    global messages
 
-def pull_from_pubsub(subscription_path):
+    messages.clear()
+    ack_ids.clear()
 
-    size = 0
-    retry = 0
-    small = 0
-    ack_ids = []
-    send_messages = []
+    streaming_pull_future = ps_client.subscribe(
+                        subscription_path,
+                        callback=callback,
+                        flow_control=pubsub_v1.types.FlowControl(max_messages=75000))
 
-    logging.info(f"Starting to gather messages from {subscription_path}...")
-    start = time.time()
+    logging.info(f"Listening for messages on {subscription_path}...")
 
-    while True:
-        mail = []
+    try:
+        last_nr_messages = len(messages)
+        start = datetime.now()
+        time.sleep(5)
 
-        try:
-            resp = client.pull(
-                request={
-                    "subscription": subscription_path,
-                    "max_messages": MAX_MESSAGES
-                }, timeout=30.0)
-        except Exception as e:
-            print(f"Pulling messages on {subscription_path} threw an exception: {e}.")
-        else:
-            messages = []
-            mail = resp.received_messages
+        while True:
+            # Less than 50 messages stop collecting
+            if len(messages)-last_nr_messages < 50:
+                streaming_pull_future.cancel()
+                break
 
-            for msg in mail:
+            # limit the duration of the function
+            if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
+                streaming_pull_future.cancel()
+                break
+
+            if len(messages) > 5000:
+                messages_lock.acquire()
+
                 try:
-                    message = json.loads(msg.message.data.decode('utf-8'))
-                except Exception:
-                    logging.warning(f"Json could not be parsed, skipping msg from subscription: {subscription_path}")
-                messages.append(message)
-                ack_ids.append(msg.ack_id)
+                    messages_for_file = messages.copy()
+                    messages.clear()
+                    ack_ids_for_file = ack_ids.copy()
+                    ack_ids.clear()
+                finally:
+                    messages_lock.release()
 
-        # Retry until max_retries
-        if len(mail) == 0:
-            retry += 1
-            if retry >= MAX_RETRIES:
-                logging.info(f"Max retries ({retry}) exceeded, exiting loop..")
-                break
-            logging.info(f"Found no messages, retry {retry}/{MAX_RETRIES}..")
-            continue
+                write_to_file(subscription, messages_for_file)
+                ack(subscription_path, ack_ids_for_file)
 
-        logging.info(f"Appending {len(messages)} message(s)...")
-        send_messages.extend(messages)
+            last_nr_messages = len(messages)
+            time.sleep(1)
 
-        # Finish when total messages is reached or time expired
-        if len(send_messages) > TOTAL_MESSAGES:
-            break
-        if (time.time() - start) > FUNCTION_TIMEOUT:
-            break
+    except TimeoutError:
+        streaming_pull_future.cancel()
+    except Exception:
+        logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
 
-        # Finish when batches become too small
-        if len(mail) < 50:
-            small += 1
-            if small >= MAX_SMALL_BATCHES:
-                logging.info("Batches too small, exiting loop..")
-                break
-            continue
-        else:
-            small = 0
+    # Finally:
+    if len(messages) > 0:
+        write_to_file(subscription, messages)
+        ack(subscription_path, ack_ids)
 
-        # Finish when total messages reaches maximum size in bytes
-        size = size + sys.getsizeof(json.dumps(messages))
-        if size >= MAX_BYTES:
-            logging.info(f"Maximum size of {MAX_BYTES} bytes reached, exiting loop..")
-            break
 
-    stop = time.time() - start
-    logging.info(f"Finished after {int(stop)} seconds, pulled {len(send_messages)} message(s) from {subscription_path}!")
-    return send_messages, ack_ids
+def callback(msg):
+    """
+    Callback function for pub/sub subscriber.
+    """
+    global messages
+    global ack_ids
+
+    messages_lock.acquire()
+    try:
+        messages.append(json.loads(msg.data.decode()))
+        ack_ids.append(msg.ack_id)
+    finally:
+        messages_lock.release()
+
+    if len(messages) % 1000 == 0:
+        logging.info("Received {} msgs".format(len(messages)))
 
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
 def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
-    client = storage.Client()
-    bucket = client.get_bucket(bucket_name)
-    blob_name = f"{prefix}/{epoch}-{unique_id}.archive.gz"
+    bucket = stg_client.get_bucket(bucket_name)
+    blob_name = f"{prefix}/{epoch}-{unique_id}.json"
     blob = bucket.blob(blob_name)
-    blob.upload_from_string(blob_bytes)
+    blob.upload_from_string(blob_bytes, content_type="application/json")
     logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
 
 
-def compress(data):
-    logging.info(f"The uncompressed size is {sys.getsizeof(data)} bytes")
-    compressed = gzip.compress(data.encode())
-    logging.info(f"The compressed size is {sys.getsizeof(compressed)} bytes")
-    return compressed
-
-
 def subscription_to_bucket(subscription):
-    bucket_name = subscription.replace('sub', 'stg')
-    return bucket_name
+    return subscription.replace('-history-sub', '-hst-sa-stg')
 
 
 def chunk(lst, n):

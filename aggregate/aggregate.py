@@ -3,9 +3,9 @@ import argparse
 import json
 import tempfile
 import tarfile
-import gzip
+import zlib
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from google import api_core
 from google.cloud import storage, exceptions as gcp_exceptions
 from retry import retry
@@ -31,7 +31,6 @@ class GCSBucketProcessor:
 
         self.client = client
 
-        self.current_datetime = datetime.now().replace(tzinfo=timezone.utc).timestamp()
         self.process_date = process_date
 
         self.bucket_name_prefix = bucket_name_prefix
@@ -39,9 +38,9 @@ class GCSBucketProcessor:
         self.backup_bucket_name = f"{bucket_name_prefix}-history-stg"
         self.bucket_prefix = datetime.strftime(process_date, '%Y/%m/%d')
 
-        self.aggregated_file_name_prefix = \
-            f"{self.bucket_prefix}/{self.staging_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
-        self.aggregated_file_name = f"{self.aggregated_file_name_prefix}_{self.current_datetime}.tar.xz"
+        self.aggregated_file_name_prefix = f"{self.backup_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
+        self.aggregated_json_name = f"{self.aggregated_file_name_prefix}.json"
+        self.aggregated_blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name_prefix}.tar.xz"
 
         self.staging_bucket = None
         self.backup_bucket = None
@@ -60,42 +59,74 @@ class GCSBucketProcessor:
         bucket_blobs = list(self.staging_bucket.list_blobs(prefix=self.bucket_prefix))
         bucket_blobs_len = len(bucket_blobs)
         bucket_blobs_processed = []
+        bucket_blobs_data_json = []
         cur_blob = 0
 
         if bucket_blobs_len == 0:
             logging.info('Found no backup files')
             return
 
-        temp_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
+        temp_tar_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.tar.xz')
 
-        with tarfile.open(fileobj=temp_file, mode='w:xz') as tar:
+        with tarfile.open(fileobj=temp_tar_file, mode='w:xz') as tar:
             for blob in bucket_blobs:
                 try:
                     cur_blob += 1
-                    cur_temp_loc = temp_file.tell()
+                    cur_temp_loc = temp_tar_file.tell()
 
                     # Skip possible previous created aggregation file
                     if self.aggregated_file_name_prefix in blob.name:
                         logging.info(f"Skipping... {cur_blob}/{bucket_blobs_len}")
                         continue
 
-                    logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len}")
-
                     # Get parsed blob data
-                    blob_data, blob_size, blob_name = self.get_blob_data(blob)
+                    blob_data, blob_name = self.get_blob_data(blob)
 
-                    # Add file and info to tar
-                    info = tarfile.TarInfo(blob_name)
-                    info.size = blob_size
-                    tar.addfile(info, blob_data)
+                    try:
+                        blob_data_dc = blob_data.decode('utf-8')
+                        blob_data_json = json.loads(blob_data_dc)
+                    except (AttributeError, UnicodeDecodeError) as e:
+                        if blob_data:  # Add blob to tar
+                            logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len} ({blob.name})")
+
+                            self.add_blob_to_tar(tar, blob_data, blob_name)
+                            bucket_blobs_processed.append(blob.name)
+                        else:
+                            logging.error(f"Skipping... {cur_blob}/{bucket_blobs_len} ({blob.name}): {str(e)}")
+                        continue
+                    else:
+                        logging.info(f"Extending... {cur_blob}/{bucket_blobs_len}")
+
+                        bucket_blobs_data_json.extend(blob_data_json)
+                        bucket_blobs_processed.append(blob.name)
                 except Exception as e:
                     logging.error(f"Skipping... {cur_blob}/{bucket_blobs_len}: {str(e)}")
-                    temp_file.seek(cur_temp_loc)
-                    continue
-                else:
-                    bucket_blobs_processed.append(blob.name)
+                    temp_tar_file.seek(cur_temp_loc)
 
-        self.process_aggregated_file(temp_file, bucket_blobs_processed)
+                    if blob.name in bucket_blobs_processed:
+                        del bucket_blobs_processed[blob.name]
+
+                    continue
+
+            # Add JSON data to tar file
+            if len(bucket_blobs_data_json) > 0:
+                logging.info(f"Aggregating... json/{bucket_blobs_len} ({self.aggregated_json_name})")
+                self.add_blob_to_tar(
+                    tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), self.aggregated_json_name)
+
+        self.process_aggregated_file(temp_tar_file, bucket_blobs_processed)
+
+    @staticmethod
+    def add_blob_to_tar(tar_file, blob_data, blob_name):
+        with tempfile.TemporaryFile(mode='w+b') as data_temp_file:
+            data_temp_file.write(blob_data)
+
+            info = tarfile.TarInfo(blob_name.split('/')[-1])
+            info.size = data_temp_file.tell()
+            info.mtime = int(datetime.utcnow().strftime('%s'))
+
+            data_temp_file.seek(0)
+            tar_file.addfile(info, data_temp_file)
 
     @staticmethod
     @retry(tries=3, delay=2, backoff=2)
@@ -104,22 +135,14 @@ class GCSBucketProcessor:
         Retrieves blob data from GCS bucket, does parse .gz files first.
         """
 
-        temp_file = tempfile.TemporaryFile(mode='w+b')
-        blob.download_to_file(temp_file)
-        temp_size = temp_file.tell()
-        temp_file.seek(0)
+        blob_string = blob.download_as_string()
+        blob_name = blob.name
 
-        if blob.name.endswith('.gz'):
-            decompressed_file = gzip.GzipFile(fileobj=temp_file, mode='rb')
-            dc_temp_file = tempfile.TemporaryFile(mode='w+b')
-            dc_temp_file.write(decompressed_file.read())
-            dc_temp_size = temp_file.tell()
+        if blob.name.endswith('.archive.gz'):
+            blob_string = zlib.decompress(blob_string, 16 + zlib.MAX_WBITS)
+            blob_name = blob_name.replace('.archive.gz', '.json')
 
-            dc_temp_file.seek(0)
-            temp_file.close()
-            return dc_temp_file, dc_temp_size, blob.name.replace('.archive.gz', '.json')
-
-        return temp_file, temp_size, blob.name
+        return blob_string, blob_name
 
     def process_aggregated_file(self, temp_file, processed_blobs):
         """
@@ -141,11 +164,11 @@ class GCSBucketProcessor:
         Saves aggregated file towards staging bucket (-hst-sa-stg).
         """
 
-        blob_location = f"gs://{self.staging_bucket_name}/{self.aggregated_file_name}"
+        blob_location = f"gs://{self.staging_bucket_name}/{self.aggregated_blob_name}"
         logging.info(f"Uploading aggregated file to '{blob_location}'")
 
         try:
-            blob = self.staging_bucket.blob(self.aggregated_file_name)
+            blob = self.staging_bucket.blob(self.aggregated_blob_name)
             blob.upload_from_file(temp_file, rewind=True, content_type="application/x-xz")
         except Exception as e:
             logging.error(f"Something went wrong during file upload: {str(e)}")
@@ -160,17 +183,36 @@ class GCSBucketProcessor:
         Copies aggregated file towards history bucket (-history-stg).
         """
 
-        blob_location = f"gs://{self.backup_bucket_name}/{self.aggregated_file_name}"
+        if not storage.Blob(bucket=self.backup_bucket, name=self.aggregated_blob_name).exists(self.client):
+            new_blob_name = self.aggregated_blob_name
+        else:
+            new_blob_name = self.check_aggregated_file_name(self.client, self.backup_bucket, self.aggregated_blob_name)
+
+        blob_location = f"gs://{self.backup_bucket_name}/{new_blob_name}"
         logging.info(f"Copying aggregated file to '{blob_location}'")
 
         try:
-            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=self.aggregated_file_name)
+            self.staging_bucket.copy_blob(staging_blob, self.backup_bucket, new_name=new_blob_name)
         except Exception as e:
             logging.error(f"Something went wrong during file copy: {str(e)}")
             raise
         else:
-            if not storage.Blob(bucket=self.backup_bucket, name=self.aggregated_file_name).exists(self.client):
+            if not storage.Blob(bucket=self.backup_bucket, name=new_blob_name).exists(self.client):
                 raise FileNotFoundError(f"Blob '{blob_location}' does not exist")
+
+    @staticmethod
+    def check_aggregated_file_name(client, bucket, blob_name):
+        new_blob_name = None
+        count = 0
+
+        while not new_blob_name:
+            name = blob_name.replace(".tar.xz", f"_{count}.tar.xz")
+            if not storage.Blob(bucket=bucket, name=name).exists(client):
+                new_blob_name = name
+            else:
+                count += 1
+
+        return new_blob_name
 
     def delete_obsolete_blobs(self, blobs):
         """

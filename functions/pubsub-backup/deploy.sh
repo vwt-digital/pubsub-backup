@@ -4,6 +4,6 @@ gcloud functions deploy "${PROJECT_ID}-history-func" \
   --trigger-http \
   --project="${PROJECT_ID}" \
   --region=europe-west1 \
-  --memory=1024MB \
+  --memory=512MB \
   --timeout=540s \
-  --set-env-vars=PROJECT_ID="${PROJECT_ID}"
+  --set-env-vars=PROJECT_ID="${PROJECT_ID}",BRANCH_NAME="${BRANCH_NAME}"
