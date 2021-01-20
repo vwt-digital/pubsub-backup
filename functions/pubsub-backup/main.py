@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
 PROJECT_ID = os.getenv('PROJECT_ID')
-BRANCH_NAME = os.getenv('BRANCH_NAME')
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 
 ps_client = pubsub_v1.SubscriberClient()
