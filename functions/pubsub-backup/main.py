@@ -7,7 +7,6 @@ import threading
 
 from google.cloud import storage
 from google.cloud import pubsub_v1
-from google.cloud import exceptions as gcp_exceptions
 from datetime import datetime
 
 from retry import retry
@@ -159,20 +158,7 @@ def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
 
 
 def subscription_to_bucket(subscription):
-    # TODO: Merge production to staging bucket
-    bucket_name = subscription.replace('sub', 'stg')
-
-    # Check if staging bucket exists, otherwise fallback to default backup bucket
-    if BRANCH_NAME == "develop" and subscription.endswith('-history-sub'):
-        try:
-            bucket_staging_name = subscription.replace('-history-sub', '-hst-sa-stg')
-            stg_client.get_bucket(bucket_staging_name)
-        except gcp_exceptions.NotFound:
-            pass
-        else:
-            bucket_name = bucket_staging_name
-
-    return bucket_name
+    return subscription.replace('-history-sub', '-hst-sa-stg')
 
 
 def chunk(lst, n):
