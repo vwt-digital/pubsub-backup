@@ -21,11 +21,6 @@ FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 ps_client = pubsub_v1.SubscriberClient()
 stg_client = storage.Client()
 
-messages = []
-ack_ids = []
-
-messages_lock = threading.Lock()
-
 
 def handler(request):
     try:
@@ -36,9 +31,6 @@ def handler(request):
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return 'ERROR', 501
-
-    if not messages:
-        logging.info("No messages to archive, exiting...")
 
     return 'OK', 204
 
@@ -73,16 +65,35 @@ def ack(subscription_path, ack_ids):
 
 
 def pull(subscription, subscription_path):
-    global ack_ids
-    global messages
+    messages = []
+    ack_ids = []
 
-    messages.clear()
-    ack_ids.clear()
+    messages_lock = threading.Lock()
+
+    # Callback to be called for every single message received
+    def callback(msg):
+        messages_lock.acquire()
+        try:
+            messages.append(json.loads(msg.data.decode()))
+            ack_ids.append(msg.ack_id)
+        finally:
+            messages_lock.release()
+
+        if len(messages) % 1000 == 0:
+            logging.info("Received {} msgs".format(len(messages)))
+
+    # Callback to be called when the last message has been received (and the async pull finished)
+    def done_callback(fut):
+        if len(messages) > 0:
+            write_to_file(subscription, messages)
+            ack(subscription_path, ack_ids)
 
     streaming_pull_future = ps_client.subscribe(
                         subscription_path,
                         callback=callback,
                         flow_control=pubsub_v1.types.FlowControl(max_messages=75000))
+
+    streaming_pull_future.add_done_callback(done_callback)
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
@@ -92,8 +103,8 @@ def pull(subscription, subscription_path):
         time.sleep(5)
 
         while True:
-            # Less than 50 messages stop collecting
-            if len(messages)-last_nr_messages < 50:
+            # Less than 25 messages stop collecting
+            if len(messages)-last_nr_messages < 25:
                 streaming_pull_future.cancel()
                 break
 
@@ -117,35 +128,12 @@ def pull(subscription, subscription_path):
                 ack(subscription_path, ack_ids_for_file)
 
             last_nr_messages = len(messages)
-            time.sleep(1)
+            time.sleep(0.5)
 
     except TimeoutError:
         streaming_pull_future.cancel()
     except Exception:
         logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
-
-    # Finally:
-    if len(messages) > 0:
-        write_to_file(subscription, messages)
-        ack(subscription_path, ack_ids)
-
-
-def callback(msg):
-    """
-    Callback function for pub/sub subscriber.
-    """
-    global messages
-    global ack_ids
-
-    messages_lock.acquire()
-    try:
-        messages.append(json.loads(msg.data.decode()))
-        ack_ids.append(msg.ack_id)
-    finally:
-        messages_lock.release()
-
-    if len(messages) % 1000 == 0:
-        logging.info("Received {} msgs".format(len(messages)))
 
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
