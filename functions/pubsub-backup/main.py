@@ -13,6 +13,7 @@ from retry import retry
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
+logging.getLogger('google.api_core').setLevel(logging.WARNING)
 
 PROJECT_ID = os.getenv('PROJECT_ID')
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
@@ -22,6 +23,7 @@ stg_client = storage.Client()
 
 
 def handler(request):
+
     try:
         subscription = request.data.decode('utf-8')
         subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
@@ -96,11 +98,11 @@ def pull(subscription, subscription_path):
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
-    try:
-        last_nr_messages = len(messages)
-        start = datetime.now()
-        time.sleep(5)
+    start = datetime.now()
+    time.sleep(5)
 
+    last_nr_messages = 0
+    try:
         while True:
             # Less than 25 messages stop collecting
             if len(messages)-last_nr_messages < 25:
@@ -133,6 +135,11 @@ def pull(subscription, subscription_path):
         streaming_pull_future.cancel()
     except Exception:
         logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
+
+    # Wait until the whole Future is done
+    while not streaming_pull_future.done():
+        logging.info('=== WAIT ===')
+        time.sleep(0.1)
 
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
