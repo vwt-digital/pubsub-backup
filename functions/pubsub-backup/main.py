@@ -102,44 +102,42 @@ def pull(subscription, subscription_path):
     time.sleep(5)
 
     last_nr_messages = 0
-    try:
-        while True:
-            # Less than 25 messages stop collecting
-            if len(messages)-last_nr_messages < 25:
-                streaming_pull_future.cancel()
-                break
+    with ps_client:
+        try:
+            while True:
+                # Less than 25 messages stop collecting
+                if len(messages)-last_nr_messages < 25:
+                    streaming_pull_future.cancel()
+                    break
 
-            # limit the duration of the function
-            if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
-                streaming_pull_future.cancel()
-                break
+                # limit the duration of the function
+                if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
+                    streaming_pull_future.cancel()
+                    break
 
-            if len(messages) > 5000:
-                messages_lock.acquire()
+                if len(messages) > 5000:
+                    messages_lock.acquire()
 
-                try:
-                    messages_for_file = messages.copy()
-                    messages.clear()
-                    ack_ids_for_file = ack_ids.copy()
-                    ack_ids.clear()
-                finally:
-                    messages_lock.release()
+                    try:
+                        messages_for_file = messages.copy()
+                        messages.clear()
+                        ack_ids_for_file = ack_ids.copy()
+                        ack_ids.clear()
+                    finally:
+                        messages_lock.release()
 
-                write_to_file(subscription, messages_for_file)
-                ack(subscription_path, ack_ids_for_file)
+                    write_to_file(subscription, messages_for_file)
+                    ack(subscription_path, ack_ids_for_file)
+                    messages_for_file.clear()
+                    ack_ids_for_file.clear()
 
-            last_nr_messages = len(messages)
-            time.sleep(0.5)
+                last_nr_messages = len(messages)
+                time.sleep(0.5)
 
-    except TimeoutError:
-        streaming_pull_future.cancel()
-    except Exception:
-        logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
-
-    # Wait until the whole Future is done
-    while not streaming_pull_future.done():
-        logging.info('=== WAIT ===')
-        time.sleep(0.1)
+        except TimeoutError:
+            streaming_pull_future.cancel()
+        except Exception:
+            logging.exception(f"Listening for messages on {subscription_path} threw an exception.")
 
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
