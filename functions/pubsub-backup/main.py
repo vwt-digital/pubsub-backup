@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import logging
@@ -114,7 +115,7 @@ def pull(subscription, subscription_path):
                 streaming_pull_future.cancel()
                 break
 
-            if len(messages) > 5000:
+            if sys.getsizeof(json.dumps(messages)) > 5000000:
                 messages_lock.acquire()
 
                 try:
@@ -126,8 +127,9 @@ def pull(subscription, subscription_path):
                     messages_lock.release()
 
                 write_to_file(subscription, messages_for_file)
-                ack(subscription_path, ack_ids_for_file)
                 messages_for_file.clear()
+
+                ack(subscription_path, ack_ids_for_file)
                 ack_ids_for_file.clear()
 
             last_nr_messages = len(messages)
