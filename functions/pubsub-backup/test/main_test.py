@@ -12,6 +12,5 @@ def app():
 
 def test_handler_get(app):
     with app.test_request_context(data='some-subscription'):
-        # res = main.handler(flask.request)
-        main.handler(flask.request)
-        # assert 'OK' in res
+        res = main.handler(flask.request)
+        assert 'OK' in res

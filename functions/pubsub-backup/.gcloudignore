@@ -4,3 +4,6 @@ requirements.test.txt
 deploy.sh
 post.sh
 schedule.sh
+pubsub-backup.svg
+README.md
+sast-config/.bandit
