@@ -133,7 +133,7 @@ def pull(subscription, subscription_path):
                 ack_ids_for_file.clear()
 
             last_nr_messages = len(messages)
-            time.sleep(0.5)
+            time.sleep(1)
 
     except TimeoutError:
         streaming_pull_future.cancel()
@@ -144,6 +144,9 @@ def pull(subscription, subscription_path):
     while not streaming_pull_future.done():
         logging.info('=== WAIT ===')
         time.sleep(0.1)
+
+    # Wait a little to make sure the future has finished
+    time.sleep(1)
 
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
