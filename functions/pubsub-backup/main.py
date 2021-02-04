@@ -37,6 +37,24 @@ def handler(request):
     return 'OK', 204
 
 
+@retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
+def to_storage(messages, bucket_name, prefix, epoch, unique_id):
+    bucket = stg_client.get_bucket(bucket_name)
+    blob_name = f"{prefix}/{epoch}-{unique_id}.json"
+    blob = bucket.blob(blob_name)
+    blob.upload_from_string(json.dumps(messages), content_type="application/json")
+    logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
+
+
+def subscription_to_bucket(subscription):
+    return subscription.replace('-history-sub', '-hst-sa-stg')
+
+
+def chunk(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
 def write_to_file(subscription, messages):
     unique_id = str(uuid.uuid4())[:16]
     now = datetime.now()
@@ -45,7 +63,7 @@ def write_to_file(subscription, messages):
     bucket_name = subscription_to_bucket(subscription)
 
     try:
-        to_storage(json.dumps(messages), bucket_name, prefix, epoch, unique_id)
+        to_storage(messages, bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}")
         return 'ERROR', 501
@@ -133,7 +151,7 @@ def pull(subscription, subscription_path):
                 ack_ids_for_file.clear()
 
             last_nr_messages = len(messages)
-            time.sleep(0.5)
+            time.sleep(1)
 
     except TimeoutError:
         streaming_pull_future.cancel()
@@ -145,20 +163,5 @@ def pull(subscription, subscription_path):
         logging.info('=== WAIT ===')
         time.sleep(0.1)
 
-
-@retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
-def to_storage(blob_bytes, bucket_name, prefix, epoch, unique_id):
-    bucket = stg_client.get_bucket(bucket_name)
-    blob_name = f"{prefix}/{epoch}-{unique_id}.json"
-    blob = bucket.blob(blob_name)
-    blob.upload_from_string(blob_bytes, content_type="application/json")
-    logging.info(f"Uploaded file gs://{bucket_name}/{blob_name}")
-
-
-def subscription_to_bucket(subscription):
-    return subscription.replace('-history-sub', '-hst-sa-stg')
-
-
-def chunk(lst, n):
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+    # Wait a little to make sure the future has finished
+    time.sleep(1)
