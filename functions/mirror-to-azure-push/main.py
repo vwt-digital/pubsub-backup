@@ -41,7 +41,7 @@ def publish_to_eventhub(msg, subscription):
     """
 
     event = {
-        "message": msg.data.decode(),
+        "message": msg,
         "subscription": subscription
     }
 

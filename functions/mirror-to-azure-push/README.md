@@ -13,5 +13,7 @@ These variables have to be defined within the environment of the function:
 The function can be invoked by creating a Pub/Sub Push Subscription towards the HTTP-endpoint of the function. Don't
 forget to ensure the Pub/Sub instances has Function Invoking permission.
 
+Function entrypoint: `mirror_to_azure_push`
+
 ## License
 [GPL-3](https://www.gnu.org/licenses/gpl-3.0.en.html)
