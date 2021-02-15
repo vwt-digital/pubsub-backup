@@ -4,7 +4,7 @@ This repository contains multiple functions to backup and process Pub/Sub Topics
 
 ## Functions
 The following functions can be found in this repository:
-- `mirror-to-azure`: A function to automatically mirror certain Pub/Sub Topic towards an Azure EventHub;
+- `mirror-to-azure-pull`: A pull function to automatically mirror certain Pub/Sub Topic towards an Azure EventHub;
 - `pubsub-backup`: A function to automatically backup certain Pub/Sub Topic towards a GCS Bucket.
 
 
