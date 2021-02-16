@@ -5,8 +5,9 @@ This function is used to publish Pub/Sub subscription messages towards an Azure 
 ## Configuration
 These variables have to be defined within the environment of the function:
 - `PROJECT_ID` `[string]`: The Project ID of the current GCP project;
-- `CONNECTION_SECRET` `[string]`: The ID of the Secret Manager secret where the Azure Event Hub connection string is 
+- `EVENTHUB_ACCESS_KEY_SECRET` `[string]`: The ID of the Secret Manager secret where the Azure Event Hub access key is 
   defined;
+- `EVENTHUB_ACCESS_KEY_NAME` `[string]`: The name of the Azure Event Hub access key;
 - `EVENTHUB_NAME` `[string]`: The name of the Azure Event Hub instance.
 
 ## Invoking
