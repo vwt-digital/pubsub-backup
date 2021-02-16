@@ -17,7 +17,8 @@ event_hub_name = os.environ.get('EVENTHUB_NAME')
 event_hub_connection_string = "Endpoint=sb://{}/;SharedAccessKeyName={};SharedAccessKey={}".format(
     event_hub_name, event_hub_shared_access_key_name, event_hub_shared_access_key)
 
-producer = EventHubProducerClient.from_connection_string(conn_str=event_hub_connection_string)
+producer = EventHubProducerClient.from_connection_string(
+    conn_str=event_hub_connection_string, eventhub_name=event_hub_name)
 
 
 def mirror_to_azure_push(request):
