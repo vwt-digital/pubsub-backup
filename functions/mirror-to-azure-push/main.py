@@ -33,7 +33,7 @@ def mirror_to_azure_push(request):
         subscription = envelope['subscription'].split('/')[-1]
         logging.info(f'Message received from {subscription}')
 
-        publish_to_eventhub(msg=json.loads(payload), subscription=subscription)
+        publish_to_eventhub(json.loads(payload))
     except Exception as e:
         logging.error(f"Extraction of subscription failed: {str(e)}")
         return 'Service Unavailable', 503
@@ -41,19 +41,15 @@ def mirror_to_azure_push(request):
     return 'No Content', 204
 
 
-def publish_to_eventhub(msg, subscription):
+def publish_to_eventhub(msg):
     """
     Function to publish message towards the Azure Event Hub.
     """
 
-    event = {
-        "message": msg,
-        "subscription": subscription
-    }
-
-    data = json.dumps(event)
     batch = producer.create_batch()
-    batch.add(EventData(data))
+    batch.add(EventData(
+        json.dumps(msg)
+    ))
 
     logging.info(f"Publishing message towards Azure Event Hub '{event_hub_name}'")
     producer.send_batch(batch)
