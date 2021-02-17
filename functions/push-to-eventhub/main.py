@@ -4,6 +4,7 @@ import utils
 import base64
 import logging
 
+from gobits import Gobits
 from azure.eventhub import EventHubProducerClient, EventData
 
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +46,10 @@ def publish_data(msg):
     """
     Function to publish message towards the Azure Event Hub.
     """
+
+    gobits = msg.get('gobits', [])
+    gobits.append(Gobits().to_json())
+    msg['gobits'] = gobits
 
     batch = producer.create_batch()
     batch.add(EventData(

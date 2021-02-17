@@ -3,6 +3,7 @@ azure-eventhub==5.3.0
 cachetools==4.2.1
 certifi==2020.12.5
 chardet==4.0.0
+gobits==1.0.8
 google-api-core==1.26.0
 google-auth==1.26.1
 google-cloud-secret-manager==2.2.0
@@ -21,9 +22,10 @@ pyparsing==2.4.7
 pytz==2021.1
 PyYAML==5.4.1
 requests==2.25.1
-rsa==4.7
+rsa==4.7.1
 six==1.15.0
 typing-extensions==3.7.4.3
 typing-inspect==0.6.0
 uamqp==1.2.14
 urllib3==1.26.3
+Werkzeug==1.0.1
