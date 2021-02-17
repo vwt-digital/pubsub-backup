@@ -15,7 +15,7 @@ event_hub_shared_access_key = utils.get_secret(
 event_hub_shared_access_key_name = os.environ.get('EVENTHUB_ACCESS_KEY_NAME')
 event_hub_name = os.environ.get('EVENTHUB_NAME')
 
-event_hub_connection_string = "Endpoint=sb://{}/;SharedAccessKeyName={};SharedAccessKey={}".format(
+event_hub_connection_string = "Endpoint=sb://{}.servicebus.windows.net/;SharedAccessKeyName={};SharedAccessKey={}".format(
     event_hub_name, event_hub_shared_access_key_name, event_hub_shared_access_key)
 
 producer = EventHubProducerClient.from_connection_string(
