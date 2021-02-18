@@ -13,10 +13,11 @@ logging.basicConfig(level=logging.INFO)
 event_hub_shared_access_key = utils.get_secret(
     os.environ.get('PROJECT_ID'), os.environ.get('EVENTHUB_ACCESS_KEY_SECRET'))
 event_hub_shared_access_key_name = os.environ.get('EVENTHUB_ACCESS_KEY_NAME')
+event_hub_fqdn = os.environ.get('EVENTHUB_FQDN')
 event_hub_name = os.environ.get('EVENTHUB_NAME')
 
-event_hub_connection_string = "Endpoint=sb://{}.servicebus.windows.net/;SharedAccessKeyName={};SharedAccessKey={}".format(
-    event_hub_name, event_hub_shared_access_key_name, event_hub_shared_access_key)
+event_hub_connection_string = "Endpoint=sb://{}/;SharedAccessKeyName={};SharedAccessKey={}".format(
+    event_hub_fqdn, event_hub_shared_access_key_name, event_hub_shared_access_key)
 
 producer = EventHubProducerClient.from_connection_string(
     conn_str=event_hub_connection_string, eventhub_name=event_hub_name)

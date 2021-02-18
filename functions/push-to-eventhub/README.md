@@ -8,6 +8,7 @@ These variables have to be defined within the environment of the function:
 - `EVENTHUB_ACCESS_KEY_SECRET` `[string]`: The ID of the Secret Manager secret where the Azure Event Hub access key is 
   defined;
 - `EVENTHUB_ACCESS_KEY_NAME` `[string]`: The name of the Azure Event Hub access key;
+- `EVENTHUB_FQDN` `[string]`: The FQDN of the Event Hubs namespace instance (format `<VALUE>.servicebus.windows.net`);
 - `EVENTHUB_NAME` `[string]`: The name of the Azure Event Hub instance.
 
 ## Invoking
