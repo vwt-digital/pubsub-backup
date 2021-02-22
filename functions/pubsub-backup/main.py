@@ -164,4 +164,4 @@ def pull(subscription, subscription_path):
         time.sleep(0.1)
 
     # Wait a little to make sure the future has finished
-    time.sleep(1)
+    time.sleep(2)
