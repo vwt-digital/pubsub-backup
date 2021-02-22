@@ -14,12 +14,12 @@ function error_exit() {
 
 gcloud functions deploy "${PROJECT_ID}-azure-mirror-func" \
   --entry-point=handler \
-  --runtime=python38 \
+  --runtime=python37 \
   --trigger-http \
   --project="${PROJECT_ID}" \
   --region=europe-west1 \
-  --memory=512MB \
-  --timeout=540s \
+  --memory=256MB \
+  --timeout=30s \
   --set-env-vars=PROJECT_ID="${PROJECT_ID}",CONNECTION_SECRET="${PROJECT_ID}-azure-conn-str",EVENTHUB_SECRET="${PROJECT_ID}-eventhub-name"
 
 gcloud functions add-iam-policy-binding "${PROJECT_ID}-azure-mirror-func" \
