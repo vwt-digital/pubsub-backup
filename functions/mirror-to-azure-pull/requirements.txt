@@ -1,11 +1,11 @@
 azure-core==1.11.0
-azure-eventhub==5.2.0
+azure-eventhub==5.3.0
 cachetools==4.2.1
 certifi==2020.12.5
 chardet==4.0.0
 google-api-core==1.26.0
 google-auth==1.27.0
-google-cloud-pubsub==2.2.0
+google-cloud-pubsub==2.4.0
 google-cloud-secret-manager==2.2.0
 googleapis-common-protos==1.52.0
 grpc-google-iam-v1==0.12.3
