@@ -10,19 +10,6 @@ from azure.eventhub import EventHubProducerClient, EventData
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
-
-event_hub_connection_string = utils.get_secret(
-    os.environ['PROJECT_ID'],
-    os.environ['CONNECTION_SECRET']
-)
-
-event_hub_name = utils.get_secret(
-    os.environ['PROJECT_ID'],
-    os.environ['EVENTHUB_SECRET']
-)
-
-subscriber = pubsub_v1.SubscriberClient()
-
 producer = None
 subscription_path = None
 
@@ -38,12 +25,23 @@ def handler(request):
 
     subscription_path = request.data.decode('utf-8')
 
+    event_hub_connection_string = utils.get_secret(
+        os.environ['PROJECT_ID'],
+        os.environ['CONNECTION_SECRET']
+    )
+
+    event_hub_name = utils.get_secret(
+        os.environ['PROJECT_ID'],
+        os.environ['EVENTHUB_SECRET']
+    )
+
     logging.info("Creating Azure producer...")
     producer = EventHubProducerClient.from_connection_string(
            conn_str=event_hub_connection_string,
            eventhub_name=event_hub_name)
 
     logging.info("Creating GCP subscriber...")
+    subscriber = pubsub_v1.SubscriberClient()
     streaming_pull_future = subscriber.subscribe(
         subscription_path,
         callback=callback)
@@ -78,9 +76,7 @@ def callback(msg):
 
     batch = producer.create_batch()
     batch.add(EventData(json.dumps(event)))
-
     logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
-
     producer.send_batch(batch)
 
     msg.ack()
