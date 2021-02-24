@@ -23,6 +23,9 @@ event_hub_name = utils.get_secret(
 
 subscriber = pubsub_v1.SubscriberClient()
 
+producer = None
+subscription_path = None
+
 
 def handler(request):
     """
@@ -30,22 +33,8 @@ def handler(request):
     and sends messages to azure event hub.
     """
 
-    def callback(msg):
-        """
-        Callback function for pub/sub subscriber.
-        """
-
-        event = {
-            "message": msg.data.decode(),
-            "subscription": subscription_path.split("/")[-1]
-        }
-
-        batch = producer.create_batch()
-        batch.add(EventData(json.dumps(event)))
-        logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
-        producer.send_batch(batch)
-
-        msg.ack()
+    global producer
+    global subscription_path
 
     subscription_path = request.data.decode('utf-8')
 
@@ -72,3 +61,26 @@ def handler(request):
             producer.close()
 
     return 'OK', 204
+
+
+def callback(msg):
+    """
+    Callback function for pub/sub subscriber.
+    """
+
+    global producer
+    global subscription_path
+
+    event = {
+        "message": msg.data.decode(),
+        "subscription": subscription_path.split("/")[-1]
+    }
+
+    batch = producer.create_batch()
+    batch.add(EventData(json.dumps(event)))
+
+    logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
+
+    producer.send_batch(batch)
+
+    msg.ack()
