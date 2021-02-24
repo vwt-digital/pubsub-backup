@@ -1,3 +1,5 @@
+[![CodeFactor](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup/badge)](https://www.codefactor.io/repository/github/vwt-digital/pubsub-backup)
+
 # Pub/Sub backup
 
 This repository contains multiple functions to backup and process Pub/Sub Topics automatically.
