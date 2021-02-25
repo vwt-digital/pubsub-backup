@@ -19,17 +19,16 @@ logging.getLogger('google.api_core').setLevel(logging.WARNING)
 PROJECT_ID = os.getenv('PROJECT_ID')
 FUNCTION_TIMEOUT = int(os.getenv('FUNCTION_TIMEOUT', '500'))
 
-ps_client = pubsub_v1.SubscriberClient()
-stg_client = storage.Client()
-
 
 def handler(request):
+
+    ps_client = pubsub_v1.SubscriberClient()
 
     try:
         subscription = request.data.decode('utf-8')
         subscription_path = ps_client.subscription_path(PROJECT_ID, subscription)
         logging.info(f"Starting to archive messages from {subscription_path}...")
-        pull(subscription, subscription_path)
+        pull(subscription, subscription_path, ps_client)
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return 'ERROR', 501
@@ -39,6 +38,7 @@ def handler(request):
 
 @retry(ConnectionError, tries=3, delay=5, backoff=2, logger=None)
 def to_storage(messages, bucket_name, prefix, epoch, unique_id):
+    stg_client = storage.Client()
     bucket = stg_client.get_bucket(bucket_name)
     blob_name = f"{prefix}/{epoch}-{unique_id}.json"
     blob = bucket.blob(blob_name)
@@ -69,7 +69,7 @@ def write_to_file(subscription, messages):
         return 'ERROR', 501
 
 
-def ack(subscription_path, ack_ids):
+def ack(subscription_path, ack_ids, ps_client):
     try:
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
@@ -84,7 +84,7 @@ def ack(subscription_path, ack_ids):
         return 'ERROR', 501
 
 
-def pull(subscription, subscription_path):
+def pull(subscription, subscription_path, ps_client):
     messages = []
     ack_ids = []
 
@@ -92,6 +92,7 @@ def pull(subscription, subscription_path):
 
     # Callback to be called for every single message received
     def callback(msg):
+
         messages_lock.acquire()
         try:
             messages.append(json.loads(msg.data.decode()))
@@ -106,7 +107,7 @@ def pull(subscription, subscription_path):
     def done_callback(fut):
         if len(messages) > 0:
             write_to_file(subscription, messages)
-            ack(subscription_path, ack_ids)
+            ack(subscription_path, ack_ids, ps_client)
 
     streaming_pull_future = ps_client.subscribe(
                         subscription_path,
@@ -133,7 +134,7 @@ def pull(subscription, subscription_path):
                 streaming_pull_future.cancel()
                 break
 
-            if sys.getsizeof(json.dumps(messages)) > 5000000:
+            if sys.getsizeof(json.dumps(messages)) > 2500000:
                 messages_lock.acquire()
 
                 try:
@@ -147,7 +148,7 @@ def pull(subscription, subscription_path):
                 write_to_file(subscription, messages_for_file)
                 messages_for_file.clear()
 
-                ack(subscription_path, ack_ids_for_file)
+                ack(subscription_path, ack_ids_for_file, ps_client)
                 ack_ids_for_file.clear()
 
             last_nr_messages = len(messages)
@@ -162,6 +163,3 @@ def pull(subscription, subscription_path):
     while not streaming_pull_future.done():
         logging.info('=== WAIT ===')
         time.sleep(0.1)
-
-    # Wait a little to make sure the future has finished
-    time.sleep(2)
