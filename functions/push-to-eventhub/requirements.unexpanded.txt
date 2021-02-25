@@ -1,3 +1,0 @@
-gobits==1.0.8
-google-cloud-secret-manager==2.2.0
-azure-eventhub==5.3.0
