@@ -35,7 +35,7 @@ def push_to_eventhub(request):
         subscription = envelope['subscription'].split('/')[-1]
         logging.info(f'Message received from {subscription}')
 
-        publish_data(json.loads(payload))
+        publish_data(json.loads(payload), request)
     except Exception as e:
         logging.error(f"Extraction of subscription failed: {str(e)}")
         return 'Service Unavailable', 503
@@ -43,13 +43,13 @@ def push_to_eventhub(request):
     return 'No Content', 204
 
 
-def publish_data(msg):
+def publish_data(msg, request):
     """
     Function to publish message towards the Azure Event Hub.
     """
 
     gobits = msg.get('gobits', [])
-    gobits.append(Gobits().to_json())
+    gobits.append(Gobits.from_request(request=request).to_json())
     msg['gobits'] = gobits
 
     batch = producer.create_batch()
