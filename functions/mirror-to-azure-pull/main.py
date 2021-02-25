@@ -10,8 +10,16 @@ from azure.eventhub import EventHubProducerClient, EventData
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('google.cloud.pubsub_v1').setLevel(logging.WARNING)
 
-producer = None
-subscription_path = None
+
+event_hub_connection_string = utils.get_secret(
+    os.environ['PROJECT_ID'],
+    os.environ['CONNECTION_SECRET']
+)
+
+event_hub_name = utils.get_secret(
+    os.environ['PROJECT_ID'],
+    os.environ['EVENTHUB_SECRET']
+)
 
 
 def handler(request):
@@ -20,20 +28,24 @@ def handler(request):
     and sends messages to azure event hub.
     """
 
-    global producer
-    global subscription_path
+    def callback(msg):
+        """
+        Callback function for pub/sub subscriber.
+        """
+
+        event = {
+            "message": msg.data.decode(),
+            "subscription": subscription_path.split("/")[-1]
+        }
+
+        batch = producer.create_batch()
+        batch.add(EventData(json.dumps(event)))
+        logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
+        producer.send_batch(batch)
+
+        msg.ack()
 
     subscription_path = request.data.decode('utf-8')
-
-    event_hub_connection_string = utils.get_secret(
-        os.environ['PROJECT_ID'],
-        os.environ['CONNECTION_SECRET']
-    )
-
-    event_hub_name = utils.get_secret(
-        os.environ['PROJECT_ID'],
-        os.environ['EVENTHUB_SECRET']
-    )
 
     logging.info("Creating Azure producer...")
     producer = EventHubProducerClient.from_connection_string(
@@ -59,25 +71,3 @@ def handler(request):
             producer.close()
 
     return 'OK', 204
-
-
-def callback(msg):
-    """
-    Callback function for pub/sub subscriber.
-    """
-
-    global producer
-    global subscription_path
-
-    event = {
-        "message": msg.data.decode(),
-        "subscription": subscription_path.split("/")[-1]
-    }
-
-    data = json.dumps(event)
-    batch = producer.create_batch()
-    batch.add(EventData(data))
-    logging.info(f"Sending {batch.size_in_bytes} bytes of messages...")
-    producer.send_batch(batch)
-
-    msg.ack()
