@@ -66,7 +66,7 @@ class GCSBucketProcessor:
         cur_blob = 0
         cur_aggregated_blob = 0
 
-        max_memory_size = 1610612736  # 1.5 GB
+        max_memory_size = 1073741824  # 1 GB
 
         if bucket_blobs_len == 0:
             logging.info('Found no backup files')
@@ -139,6 +139,8 @@ class GCSBucketProcessor:
                 logging.info(f"Aggregating... json/{bucket_blobs_len} ({aggregated_json_name})")
                 self.add_blob_to_tar(
                     tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
+
+        del bucket_blobs_data_json
 
         self.process_aggregated_file(temp_tar_file, bucket_blobs_processed)
 
