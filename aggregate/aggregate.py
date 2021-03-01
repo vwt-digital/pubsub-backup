@@ -136,7 +136,7 @@ class GCSBucketProcessor:
                 aggregated_json_name = f"{self.aggregated_file_name_prefix}.json" if cur_aggregated_blob == 0 \
                     else f"{self.aggregated_file_name_prefix}_{cur_aggregated_blob}.json"
 
-                logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len} ({aggregated_json_name})")
+                logging.info(f"Aggregating... json/{bucket_blobs_len} ({aggregated_json_name})")
                 self.add_blob_to_tar(
                     tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
 
