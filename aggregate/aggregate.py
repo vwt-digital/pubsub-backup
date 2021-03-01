@@ -4,6 +4,7 @@ import json
 import tempfile
 import tarfile
 import zlib
+import tracemalloc
 
 from datetime import datetime, timedelta
 from google import api_core
@@ -39,7 +40,6 @@ class GCSBucketProcessor:
         self.bucket_prefix = datetime.strftime(process_date, '%Y/%m/%d')
 
         self.aggregated_file_name_prefix = f"{self.backup_bucket_name}_{datetime.strftime(process_date, '%Y%m%d')}"
-        self.aggregated_json_name = f"{self.aggregated_file_name_prefix}.json"
         self.aggregated_blob_name = f"{self.bucket_prefix}/{self.aggregated_file_name_prefix}.tar.xz"
 
         self.staging_bucket = None
@@ -49,6 +49,8 @@ class GCSBucketProcessor:
         """
         Aggregates blobs within class bucket.
         """
+
+        tracemalloc.start()  # Start tracing the memory
 
         try:  # Connect to staging (hst-sa-stg) and backup (history-stg) buckets
             self.staging_bucket = self.client.get_bucket(self.staging_bucket_name)
@@ -60,7 +62,11 @@ class GCSBucketProcessor:
         bucket_blobs_len = len(bucket_blobs)
         bucket_blobs_processed = []
         bucket_blobs_data_json = []
+
         cur_blob = 0
+        cur_aggregated_blob = 0
+
+        max_memory_size = 1610612736  # 1.5 GB
 
         if bucket_blobs_len == 0:
             logging.info('Found no backup files')
@@ -107,12 +113,32 @@ class GCSBucketProcessor:
                         del bucket_blobs_processed[blob.name]
 
                     continue
+                else:
+                    # Check for current memory size. If it reached [max_memory_size], the current batch will be saved
+                    # and the list will be reset
+                    current_size, current_peak = tracemalloc.get_traced_memory()
+
+                    if current_size >= max_memory_size:
+                        aggregated_json_name = f"{self.aggregated_file_name_prefix}.json" if cur_aggregated_blob == 0 \
+                            else f"{self.aggregated_file_name_prefix}_{cur_aggregated_blob}.json"
+
+                        logging.info(f"Aggregating... json/{bucket_blobs_len} ({aggregated_json_name})")
+                        self.add_blob_to_tar(
+                            tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
+
+                        bucket_blobs_data_json = []
+                        cur_aggregated_blob += 1
+
+            tracemalloc.stop()  # Stop tracing the memory
 
             # Add JSON data to tar file
             if len(bucket_blobs_data_json) > 0:
-                logging.info(f"Aggregating... json/{bucket_blobs_len} ({self.aggregated_json_name})")
+                aggregated_json_name = f"{self.aggregated_file_name_prefix}.json" if cur_aggregated_blob == 0 \
+                    else f"{self.aggregated_file_name_prefix}_{cur_aggregated_blob}.json"
+
+                logging.info(f"Aggregating... {cur_blob}/{bucket_blobs_len} ({aggregated_json_name})")
                 self.add_blob_to_tar(
-                    tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), self.aggregated_json_name)
+                    tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
 
         self.process_aggregated_file(temp_tar_file, bucket_blobs_processed)
 
