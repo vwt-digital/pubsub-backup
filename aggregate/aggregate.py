@@ -119,10 +119,9 @@ class GCSBucketProcessor:
                     current_size, current_peak = tracemalloc.get_traced_memory()
 
                     if current_size >= max_memory_size:
-                        aggregated_json_name = f"{self.aggregated_file_name_prefix}.json" if cur_aggregated_blob == 0 \
-                            else f"{self.aggregated_file_name_prefix}_{cur_aggregated_blob}.json"
-
+                        aggregated_json_name = self.get_aggregated_file_name(cur_aggregated_blob)
                         logging.info(f"Aggregating... json/{bucket_blobs_len} ({aggregated_json_name})")
+
                         self.add_blob_to_tar(
                             tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
 
@@ -133,10 +132,9 @@ class GCSBucketProcessor:
 
             # Add JSON data to tar file
             if len(bucket_blobs_data_json) > 0:
-                aggregated_json_name = f"{self.aggregated_file_name_prefix}.json" if cur_aggregated_blob == 0 \
-                    else f"{self.aggregated_file_name_prefix}_{cur_aggregated_blob}.json"
-
+                aggregated_json_name = self.get_aggregated_file_name(cur_aggregated_blob)
                 logging.info(f"Aggregating... json/{bucket_blobs_len} ({aggregated_json_name})")
+
                 self.add_blob_to_tar(
                     tar, json.dumps(bucket_blobs_data_json).encode('utf-8'), aggregated_json_name)
 
@@ -155,6 +153,16 @@ class GCSBucketProcessor:
 
             data_temp_file.seek(0)
             tar_file.addfile(info, data_temp_file)
+
+    def get_aggregated_file_name(self, count):
+        """
+        Return the file name for the current aggregated file.
+        """
+
+        if count == 0:
+            return f"{self.aggregated_file_name_prefix}.json"
+
+        return f"{self.aggregated_file_name_prefix}_{count}.json"
 
     @staticmethod
     @retry(tries=3, delay=2, backoff=2)
