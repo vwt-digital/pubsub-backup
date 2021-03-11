@@ -159,6 +159,8 @@ def pull(subscription, subscription_path, ps_client):
         logging.exception(
             f"Listening for messages on {subscription_path} threw an exception."
         )
+    finally:
+        ps_client.close()
 
     # Wait until the whole Future is done
     while not streaming_pull_future.done():
