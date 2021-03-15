@@ -118,7 +118,7 @@ def pull(subscription, subscription_path, ps_client):
     logging.info(f"Listening for messages on {subscription_path}...")
 
     start = datetime.now()
-    time.sleep(5)
+    time.sleep(3)
 
     last_nr_messages = 0
     try:
@@ -161,8 +161,3 @@ def pull(subscription, subscription_path, ps_client):
         )
     finally:
         ps_client.close()
-
-    # Wait until the whole Future is done
-    while not streaming_pull_future.done():
-        logging.info("=== WAIT ===")
-        time.sleep(0.1)
