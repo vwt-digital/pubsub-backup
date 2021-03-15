@@ -60,8 +60,13 @@ def write_to_file(subscription, messages):
     prefix = now.strftime("%Y/%m/%d/%H")
     bucket_name = subscription_to_bucket(subscription)
 
+    message = []
+
+    for msg in messages:
+        message.append(json.loads(msg.data.decode()))
+
     try:
-        to_storage(messages, bucket_name, prefix, epoch, unique_id)
+        to_storage(message, bucket_name, prefix, epoch, unique_id)
     except Exception as e:
         logging.exception(
             f"Storing of file in gs://{bucket_name}/{prefix} failed, reason: {e}"
@@ -69,22 +74,13 @@ def write_to_file(subscription, messages):
         return "ERROR", 501
 
 
-def ack(subscription_path, ack_ids, ps_client):
-    try:
-        chunks = chunk(ack_ids, 1000)
-        for batch in chunks:
-            ps_client.acknowledge(
-                request={"subscription": subscription_path, "ack_ids": batch}
-            )
-        logging.info(f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}")
-    except Exception as e:
-        logging.exception(f"Acknowleding failed, reason: {e}")
-        return "ERROR", 501
+def ack(messages):
+    for msg in messages:
+        msg.ack()
 
 
 def pull(subscription, subscription_path, ps_client):
     messages = []
-    ack_ids = []
 
     messages_lock = threading.Lock()
 
@@ -93,8 +89,8 @@ def pull(subscription, subscription_path, ps_client):
 
         messages_lock.acquire()
         try:
-            messages.append(json.loads(msg.data.decode()))
-            ack_ids.append(msg.ack_id)
+            # messages.append(json.loads(msg.data.decode()))
+            messages.append(msg)
         finally:
             messages_lock.release()
 
@@ -105,12 +101,12 @@ def pull(subscription, subscription_path, ps_client):
     def done_callback(fut):
         if len(messages) > 0:
             write_to_file(subscription, messages)
-            ack(subscription_path, ack_ids, ps_client)
+            ack(messages)
 
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
         callback=callback,
-        flow_control=pubsub_v1.types.FlowControl(max_messages=50000),
+        flow_control=pubsub_v1.types.FlowControl(max_messages=5000),
     )
 
     streaming_pull_future.add_done_callback(done_callback)
@@ -118,11 +114,12 @@ def pull(subscription, subscription_path, ps_client):
     logging.info(f"Listening for messages on {subscription_path}...")
 
     start = datetime.now()
-    time.sleep(3)
+    time.sleep(1)
 
     last_nr_messages = 0
     try:
         while True:
+
             # Less than 25 messages stop collecting
             if len(messages) - last_nr_messages < 25:
                 streaming_pull_future.cancel(await_msg_callbacks=True)
@@ -133,25 +130,27 @@ def pull(subscription, subscription_path, ps_client):
                 streaming_pull_future.cancel(await_msg_callbacks=True)
                 break
 
-            if sys.getsizeof(json.dumps(messages)) > 2500000:
+            size = 0
+
+            for m in messages:
+                size = size + sys.getsizeof(m.data)
+            logging.info("=== Sizeof of messages = [{}] ===".format(size))
+
+            if size > 2500000:
                 messages_lock.acquire()
 
                 try:
                     messages_for_file = messages.copy()
                     messages.clear()
-                    ack_ids_for_file = ack_ids.copy()
-                    ack_ids.clear()
                 finally:
                     messages_lock.release()
 
                 write_to_file(subscription, messages_for_file)
+                ack(messages_for_file)
                 messages_for_file.clear()
 
-                ack(subscription_path, ack_ids_for_file, ps_client)
-                ack_ids_for_file.clear()
-
             last_nr_messages = len(messages)
-            time.sleep(1)
+            time.sleep(0.5)
 
     except TimeoutError:
         streaming_pull_future.cancelawait_msg_callbacks = True()
