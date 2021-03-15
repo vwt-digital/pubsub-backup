@@ -74,9 +74,11 @@ def write_to_file(subscription, messages):
         return "ERROR", 501
 
 
-def ack(messages):
+def ack(messages, subscription_path):
     for msg in messages:
         msg.ack()
+
+    logging.info(f"Acknowledged {len(messages)} messages on {subscription_path}...")
 
 
 def pull(subscription, subscription_path, ps_client):
@@ -101,7 +103,7 @@ def pull(subscription, subscription_path, ps_client):
     def done_callback(fut):
         if len(messages) > 0:
             write_to_file(subscription, messages)
-            ack(messages)
+            ack(messages, subscription)
 
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
@@ -134,7 +136,6 @@ def pull(subscription, subscription_path, ps_client):
 
             for m in messages:
                 size = size + sys.getsizeof(m.data)
-            logging.info("=== Sizeof of messages = [{}] ===".format(size))
 
             if size > 2500000:
                 messages_lock.acquire()
@@ -146,7 +147,7 @@ def pull(subscription, subscription_path, ps_client):
                     messages_lock.release()
 
                 write_to_file(subscription, messages_for_file)
-                ack(messages_for_file)
+                ack(messages_for_file, subscription)
                 messages_for_file.clear()
 
             last_nr_messages = len(messages)
