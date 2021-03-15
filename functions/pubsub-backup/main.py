@@ -114,7 +114,7 @@ def pull(subscription, subscription_path, ps_client):
     logging.info(f"Listening for messages on {subscription_path}...")
 
     start = datetime.now()
-    time.sleep(1)
+    time.sleep(3)
 
     last_nr_messages = 0
     try:
@@ -150,7 +150,7 @@ def pull(subscription, subscription_path, ps_client):
                 messages_for_file.clear()
 
             last_nr_messages = len(messages)
-            time.sleep(0.5)
+            time.sleep(1)
 
     except TimeoutError:
         streaming_pull_future.cancelawait_msg_callbacks = True()
