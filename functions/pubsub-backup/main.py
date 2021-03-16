@@ -123,7 +123,7 @@ def pull(subscription, subscription_path, ps_client):
     def done_callback(fut):
         if len(messages) > 0:
             write_to_file(subscription, messages)
-            last_ack(messages, subscription, ps_client)
+            last_ack(messages, subscription_path, ps_client)
 
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
