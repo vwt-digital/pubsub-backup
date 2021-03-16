@@ -30,7 +30,8 @@ def handler(request):
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return "ERROR", 501
-
+    finally:
+        ps_client.close()
     return "OK", 204
 
 
@@ -74,11 +75,31 @@ def write_to_file(subscription, messages):
         return "ERROR", 501
 
 
+def last_ack(messages, subscription_path, ps_client):
+    ack_ids = []
+
+    for msg in messages:
+        ack_ids.append(msg.ack_id)
+
+    try:
+        chunks = chunk(ack_ids, 1000)
+        for batch in chunks:
+            ps_client.acknowledge(
+                request={"subscription": subscription_path, "ack_ids": batch}
+            )
+        logging.info(
+            f"Acknowledged {len(ack_ids)} message(s) from {subscription_path}..."
+        )
+    except Exception as e:
+        logging.exception(f"Acknowleding failed, reason: {e}")
+        return "ERROR", 501
+
+
 def ack(messages, subscription_path):
     for msg in messages:
         msg.ack()
 
-    logging.info(f"Acknowledged {len(messages)} messages on {subscription_path}...")
+    logging.info(f"Acknowledged {len(messages)} message(s) on {subscription_path}...")
 
 
 def pull(subscription, subscription_path, ps_client):
@@ -91,7 +112,6 @@ def pull(subscription, subscription_path, ps_client):
 
         messages_lock.acquire()
         try:
-            # messages.append(json.loads(msg.data.decode()))
             messages.append(msg)
         finally:
             messages_lock.release()
@@ -103,7 +123,7 @@ def pull(subscription, subscription_path, ps_client):
     def done_callback(fut):
         if len(messages) > 0:
             write_to_file(subscription, messages)
-            ack(messages, subscription)
+            last_ack(messages, subscription, ps_client)
 
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
@@ -159,5 +179,3 @@ def pull(subscription, subscription_path, ps_client):
         logging.exception(
             f"Listening for messages on {subscription_path} threw an exception."
         )
-    finally:
-        ps_client.close()
