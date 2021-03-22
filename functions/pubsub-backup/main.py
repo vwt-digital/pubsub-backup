@@ -51,7 +51,7 @@ def subscription_to_bucket(subscription):
 
 def chunk(lst, n):
     for i in range(0, len(lst), n):
-        yield lst[i : i + n]  # noqa: E203
+        yield lst[i : i + n]
 
 
 def write_to_file(subscription, messages):
@@ -109,7 +109,6 @@ def pull(subscription, subscription_path, ps_client):
 
     # Callback to be called for every single message received
     def callback(msg):
-
         messages_lock.acquire()
         try:
             messages.append(msg)
@@ -121,9 +120,8 @@ def pull(subscription, subscription_path, ps_client):
 
     # Callback to be called when the last message has been received (and the async pull finished)
     def done_callback(fut):
-        if len(messages) > 0:
-            write_to_file(subscription, messages)
-            last_ack(messages, subscription_path, ps_client)
+        write_to_file(subscription, messages)
+        last_ack(messages, subscription_path, ps_client)
 
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
@@ -135,13 +133,20 @@ def pull(subscription, subscription_path, ps_client):
 
     logging.info(f"Listening for messages on {subscription_path}...")
 
-    start = datetime.now()
-    time.sleep(3)
+    try:
+        process_reponses(messages, streaming_pull_future, subscription, messages_lock)
+    except Exception as e:
+        logging.exception(f"Processing reponses failed, reason: {e}")
 
+
+def process_reponses(messages, streaming_pull_future, subscription, messages_lock):
+    start = datetime.now()
     last_nr_messages = 0
+
+    time.sleep(2)
+
     try:
         while True:
-
             # Less than 25 messages stop collecting
             if len(messages) - last_nr_messages < 25:
                 streaming_pull_future.cancel(await_msg_callbacks=True)
@@ -152,12 +157,8 @@ def pull(subscription, subscription_path, ps_client):
                 streaming_pull_future.cancel(await_msg_callbacks=True)
                 break
 
-            size = 0
-
-            for m in messages:
-                size = size + sys.getsizeof(m.data)
-
-            if size > 2500000:
+            # Write to file (and commit) when enough messages have been received
+            if rough_size_estimate(messages) > 2500000:
                 messages_lock.acquire()
 
                 try:
@@ -177,5 +178,15 @@ def pull(subscription, subscription_path, ps_client):
         streaming_pull_future.cancelawait_msg_callbacks = True()
     except Exception:
         logging.exception(
-            f"Listening for messages on {subscription_path} threw an exception."
+            f"Listening for messages on {subscription} threw an exception."
         )
+
+
+def rough_size_estimate(messages):
+    # A not so exact method of size calculation
+    size = 0
+
+    for m in messages:
+        size = size + sys.getsizeof(m.data)
+
+    return size
