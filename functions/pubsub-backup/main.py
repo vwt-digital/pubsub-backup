@@ -147,8 +147,8 @@ def process_reponses(messages, streaming_pull_future, subscription, messages_loc
 
     try:
         while True:
-            # Less than 25 messages stop collecting
-            if len(messages) - last_nr_messages < 25:
+            # Less than 15 messages stop collecting
+            if len(messages) - last_nr_messages < 15:
                 streaming_pull_future.cancel(await_msg_callbacks=True)
                 break
 
