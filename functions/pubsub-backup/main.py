@@ -143,14 +143,13 @@ def process_reponses(messages, streaming_pull_future, subscription, messages_loc
     start = datetime.now()
     last_nr_messages = 0
 
-    time.sleep(2)
-
     try:
         while True:
-            # Less than 15 messages stop collecting
-            if len(messages) - last_nr_messages < 15:
-                streaming_pull_future.cancel(await_msg_callbacks=True)
-                break
+            # Less than 15 messages stop collecting (but don't check during the first seconds)
+            if (datetime.now() - start).total_seconds() > 4:
+                if len(messages) - last_nr_messages < 15:
+                    streaming_pull_future.cancel(await_msg_callbacks=True)
+                    break
 
             # limit the duration of the function
             if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
