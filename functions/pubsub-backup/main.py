@@ -66,6 +66,9 @@ def write_to_file(subscription, messages):
     for msg in messages:
         message.append(json.loads(msg.data.decode()))
 
+    if not message:
+        return
+
     try:
         to_storage(message, bucket_name, prefix, epoch, unique_id)
     except Exception as e:
