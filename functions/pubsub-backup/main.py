@@ -87,7 +87,7 @@ def last_ack(messages, subscription_path, ps_client):
     try:
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            pubsub_v1.SubscriberClient().acknowledge(
+            ps_client.acknowledge(
                 request={"subscription": subscription_path, "ack_ids": batch}
             )
         logging.info(
@@ -129,7 +129,6 @@ def pull(subscription, subscription_path, ps_client):
     streaming_pull_future = ps_client.subscribe(
         subscription_path,
         callback=callback,
-        await_callbacks_on_shutdown=True,
         flow_control=pubsub_v1.types.FlowControl(max_messages=5000),
     )
 
@@ -152,12 +151,12 @@ def process_reponses(messages, streaming_pull_future, subscription, messages_loc
             # Less than 15 messages stop collecting (but don't check during the first seconds)
             if (datetime.now() - start).total_seconds() > 4:
                 if len(messages) - last_nr_messages < 15:
-                    streaming_pull_future.cancel()
+                    streaming_pull_future.cancel(await_msg_callbacks=True)
                     break
 
             # limit the duration of the function
             if (datetime.now() - start).total_seconds() > FUNCTION_TIMEOUT:
-                streaming_pull_future.cancel()
+                streaming_pull_future.cancel(await_msg_callbacks=True)
                 break
 
             # Write to file (and commit) when enough messages have been received
@@ -178,7 +177,7 @@ def process_reponses(messages, streaming_pull_future, subscription, messages_loc
             time.sleep(1)
 
     except TimeoutError:
-        streaming_pull_future.cancel()
+        streaming_pull_future.cancel(await_msg_callbacks=True)
     except Exception:
         logging.exception(
             f"Listening for messages on {subscription} threw an exception."
