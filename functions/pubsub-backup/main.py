@@ -177,7 +177,7 @@ def process_reponses(messages, streaming_pull_future, subscription, messages_loc
             time.sleep(1)
 
     except TimeoutError:
-        streaming_pull_future.cancelawait_msg_callbacks = True()
+        streaming_pull_future.cancel(await_msg_callbacks=True)
     except Exception:
         logging.exception(
             f"Listening for messages on {subscription} threw an exception."
