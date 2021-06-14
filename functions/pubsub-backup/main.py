@@ -84,10 +84,12 @@ def last_ack(messages, subscription_path, ps_client):
     for msg in messages:
         ack_ids.append(msg.ack_id)
 
+    ps_client2 = pubsub_v1.SubscriberClient()
+
     try:
         chunks = chunk(ack_ids, 1000)
         for batch in chunks:
-            ps_client.acknowledge(
+            ps_client2.acknowledge(
                 request={"subscription": subscription_path, "ack_ids": batch}
             )
         logging.info(
