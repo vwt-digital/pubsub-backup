@@ -30,8 +30,7 @@ def handler(request):
     except Exception as e:
         logging.exception(f"Something bad happened, reason: {e}")
         return "ERROR", 501
-    finally:
-        ps_client.close()
+
     return "OK", 204
 
 
