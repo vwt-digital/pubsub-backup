@@ -10,10 +10,6 @@ from datetime import datetime
 from google.cloud import pubsub_v1, storage
 from retry import retry
 
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("google.cloud.pubsub_v1").setLevel(logging.WARNING)
-logging.getLogger("google.api_core").setLevel(logging.WARNING)
-
 PROJECT_ID = os.getenv("PROJECT_ID")
 FUNCTION_TIMEOUT = int(os.getenv("FUNCTION_TIMEOUT", "500"))
 
