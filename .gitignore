@@ -3,3 +3,5 @@ env.yaml
 config.py
 venv/
 __pycache__/
+main-test.py
+env/
